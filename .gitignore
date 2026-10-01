@@ -8,6 +8,15 @@ node_modules/
 *.log
 npm-debug.log*
 
+# Scratch files from running git/ship commands by hand
+test-output.txt
+ship-check.txt
+push-check.txt
+commit-check.txt
+state.txt
+log.txt
+smoke-result.txt
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

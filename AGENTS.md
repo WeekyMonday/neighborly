@@ -45,3 +45,10 @@ expected on this host.
 
 `npm test` runs the socket/friend/voice/invite suites. Run it after backend or
 protocol changes.
+
+`npm run smoke` (i.e. `node smoke.js`) boots the real server and requests
+`/api`, `/login.html`, `/register.html`, `/Neighborly.html`, `/sw.js` and
+`/js/app.js`, reporting HTTP status + byte counts and printing the current
+service-worker cache name. Run it after touching anything under
+`FRONTEND/www` — it catches 404s and syntax errors in served pages before a
+push ships them.
