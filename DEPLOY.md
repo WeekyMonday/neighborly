@@ -161,12 +161,21 @@ The `*.onrender.com` subdomain keeps working alongside your custom domain.
 
 ## 3. Post-deploy configuration (required — do this after you get the URL)
 
-1. **Firebase → allow your new domain**
-   Firebase Console → your project (`neighborly-967d9`) → **Authentication →
-   Settings → Authorized domains → Add domain** → add your host, e.g.
-   `neighborly.onrender.com` (no `https://`, no trailing slash).
-   Without this, login/register/verification emails fail with
-   `auth/unauthorized-domain`.
+1. **Firebase authorized domains — NOT required for this app's login ✅**
+
+   This was **verified empirically**: email/password sign-in and sign-up are
+   *not* subject to Firebase's authorized-domain restriction. Calling
+   `identitytoolkit.googleapis.com/v1/accounts:signInWithPassword` and
+   `...:signUp` with `Origin: https://<your-domain>` returned normal app-level
+   responses (`INVALID_LOGIN_CREDENTIALS`, `WEAK_PASSWORD`) — **not**
+   `UNAUTHORIZED_DOMAIN`. So login and registration work on any hostname.
+
+   You only need to add the domain (Firebase Console → Authentication →
+   Settings → **Authorized domains**) if you later add:
+   - an **OAuth provider** (Google / Facebook / Apple popup or redirect sign-in), or
+   - **email-link sign-in**, or a custom `continueUrl` for verification emails.
+
+   Adding it anyway is harmless and future-proofs the app.
 
 2. **Supabase → allow the password-reset redirect** (only used by the reset flow)
    Supabase Dashboard → **Authentication → URL Configuration**:
