@@ -38,11 +38,16 @@ Then open <http://localhost:3001>. You should see the login page, and
 The app is currently published on a public HTTPS URL with **no cloud account**,
 using a Cloudflare quick tunnel that forwards to `http://localhost:3001`:
 
-**https://charger-thanksgiving-would-beautifully.trycloudflare.com**
+**https://cassette-star-lbs-debian.trycloudflare.com**
 
 It runs as the Windows Scheduled Task **`NeighborlyWeb`**
 (`C:\Users\ACER\AppData\Local\Temp\neighborly-deploy.cmd`), which starts the
 Node server and then `cloudflared`.
+
+> ⚠️ **This URL is ephemeral.** It changes every time the task restarts, and it
+> dies if the PC sleeps, shuts down, or loses internet (a laptop lid-close is
+> enough). Re-check the current URL after any restart with:
+> `Select-String -Path "$env:TEMP\nb-tunnel.log" -Pattern 'trycloudflare' | Select-Object -Last 1`
 
 **Know these limits:**
 
