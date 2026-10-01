@@ -1,0 +1,62 @@
+{
+  "name": "Echo - Campus Chat",
+  "short_name": "Echo",
+  "description": "Real-time messaging and voice chat for campus communities",
+  "start_url": "/Neighborly.html",
+  "display": "standalone",
+  "background_color": "#36393F",
+  "theme_color": "#7289DA",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%237289DA' width='192' height='192'/><text x='50%' y='50%' font-size='120' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='central'>E</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect fill='%237289DA' width='512' height='512'/><text x='50%' y='50%' font-size='360' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='central'>E</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "communication"],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%2336393F' width='540' height='720'/><text x='270' y='360' font-size='80' fill='%237289DA' text-anchor='middle' dominant-baseline='central'>Echo Chat</text></svg>",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Direct Messages",
+      "short_name": "Messages",
+      "description": "Open direct messages",
+      "url": "/Neighborly.html?section=messages",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect fill='%237289DA' width='96' height='96'/><text x='48' y='48' font-size='60' fill='white' text-anchor='middle' dominant-baseline='central'>💬</text></svg>",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Friends",
+      "short_name": "Friends",
+      "description": "Manage friends and requests",
+      "url": "/Neighborly.html?section=friends",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect fill='%237289DA' width='96' height='96'/><text x='48' y='48' font-size='60' fill='white' text-anchor='middle' dominant-baseline='central'>👥</text></svg>",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false
+}

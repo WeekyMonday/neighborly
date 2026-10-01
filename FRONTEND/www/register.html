@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Echo">
+<meta name="theme-color" content="#7289DA">
+<link rel="manifest" href="/manifest.json">
+<title>Create account · Echo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #14151a;
+    --slate: #6b7280;
+    --slate-soft: #9498a3;
+    --cloud: #f4f5f9;
+    --paper: #ffffff;
+    --border-soft: #e6e7ec;
+    --echo-violet: #6d5cf0;
+    --echo-violet-hover: #5a4ad9;
+    --danger: #e0405a;
+    --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background-color: var(--cloud);
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  .display-face { font-family: 'Fraunces', Georgia, serif; }
+  a { color: inherit; text-decoration: none; }
+  .auth-card { width: 100%; max-width: 440px; background: var(--paper); border-radius: 20px; padding: 36px 32px; box-shadow: 0 20px 50px rgba(20,21,26,0.08); }
+  .auth-icon {
+    width: 56px; height: 56px; border-radius: 16px; background: rgba(109,92,240,0.12); color: var(--echo-violet);
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 18px;
+  }
+  .auth-icon svg { width: 26px; height: 26px; }
+  .auth-card h1 { font-size: 24px; margin-bottom: 8px; text-align: center; }
+  .auth-desc { text-align: center; font-size: 13px; color: var(--slate); margin: 0 auto 28px; max-width: 300px; }
+  form { text-align: left; }
+  .field-group { margin-bottom: 16px; }
+  .field-label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  .field-input { width: 100%; height: 46px; border: 1.5px solid var(--border-soft); border-radius: 12px; padding: 0 14px; font-size: 14px; background: var(--cloud); }
+  .field-input:focus { outline: none; border-color: var(--echo-violet); background: var(--paper); box-shadow: 0 0 0 4px rgba(109,92,240,0.14); }
+  .field-input.has-error { border-color: var(--danger); }
+  .field-input.shake, .auth-card.shake { animation: auth-shake 0.36s ease-in-out; }
+  @keyframes auth-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+  @media (prefers-reduced-motion: reduce) { .field-input.shake, .auth-card.shake { animation: none; } }
+  .field-error-text { font-size: 12px; color: var(--danger); display: none; margin-top: 6px; }
+  .field-error-text.show { display: block; }
+  .field-hint { margin-top: 6px; color: var(--slate); font-size: 11px; line-height: 1.45; }
+  .auth-submit-btn { width: 100%; height: 48px; border: none; border-radius: 999px; background: var(--echo-violet); color: white; font-weight: 700; cursor: pointer; }
+  .auth-submit-btn:hover { background: var(--echo-violet-hover); }
+  .auth-submit-btn:disabled { opacity: 0.7; cursor: default; }
+  .form-banner { display: none; align-items: flex-start; gap: 10px; background: rgba(224,64,90,0.08); border: 1px solid rgba(224,64,90,0.25); color: var(--danger); border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-bottom: 18px; }
+  .form-banner.show { display: flex; }
+  .form-banner.success { display: flex; background: rgba(35,165,90,0.08); border-color: rgba(35,165,90,0.25); color: #1f9c53; }
+  .verification-notice { padding: 18px; border: 1px solid rgba(109,92,240,0.2); border-radius: 14px; background: rgba(109,92,240,0.06); text-align: center; }
+  .verification-notice[hidden] { display: none; }
+  .verification-notice h2 { margin-bottom: 8px; font-size: 17px; }
+  .verification-notice p { color: var(--slate); font-size: 13px; line-height: 1.55; }
+  .verification-notice a { display: inline-block; margin-top: 14px; color: var(--echo-violet); font-size: 13px; font-weight: 700; }
+  .auth-form-footnote { margin-top: 22px; font-size: 13px; text-align: center; color: var(--slate); }
+  .auth-form-footnote a { color: var(--echo-violet); font-weight: 700; }
+  .password-toggle-btn { position: absolute; right: 6px; top: 6px; width: 34px; height: 34px; border: none; background: none; color: var(--slate); border-radius: 8px; }
+  .password-toggle-btn:hover { background: var(--border-soft); }
+  .field-input-wrap { position: relative; }
+</style>
+<link rel="stylesheet" href="css/artificium-theme.css?v=12">
+</head>
+<body>
+  <script src="js/neighborly-loader.js"></script>
+  <div class="auth-card">
+    <div class="auth-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+    </div>
+    <h1 class="display-face">Create your account</h1>
+    <p class="auth-desc">Join the community and get access to your workspace.</p>
+
+    <div class="form-banner" id="form-banner" role="alert">
+      <span id="form-banner-text">Something went wrong. Try again.</span>
+    </div>
+
+    <form id="register-form" novalidate>
+      <div class="field-group">
+        <label class="field-label" for="username">Username</label>
+        <div class="field-input-wrap">
+          <input class="field-input" type="text" id="username" name="username" placeholder="Choose a username" autocomplete="username" required>
+        </div>
+        <p class="field-error-text" id="username-error">Enter a username with at least 2 characters.</p>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="email">Email</label>
+        <div class="field-input-wrap">
+          <input class="field-input" type="email" id="email" name="email" placeholder="you@campus.edu" autocomplete="email" required>
+        </div>
+        <p class="field-error-text" id="email-error">Enter a valid email address.</p>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="phone">Phone number</label>
+        <div class="field-input-wrap">
+          <input class="field-input" type="tel" id="phone" name="phone" placeholder="+1 555 123 4567" autocomplete="tel" inputmode="tel" required>
+        </div>
+        <p class="field-error-text" id="phone-error">Enter a valid phone number, including its country code.</p>
+        <p class="field-hint">We’ll save this as your contact number. SMS verification is not enabled yet.</p>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="password">Password</label>
+        <div class="field-input-wrap">
+          <input class="field-input" type="password" id="password" name="password" placeholder="Create a password" autocomplete="new-password" required style="padding-right: 44px;">
+          <button type="button" class="password-toggle-btn" id="toggle-password" title="Show password" aria-label="Show password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          </button>
+        </div>
+        <p class="field-error-text" id="password-error">Choose a password with at least 6 characters.</p>
+      </div>
+
+      <button type="submit" class="auth-submit-btn" id="submit-btn">Create account</button>
+    </form>
+
+    <div class="verification-notice" id="verification-notice" role="status" hidden>
+      <h2>Verify your email</h2>
+      <p id="verification-notice-text">We sent a verification link to your email address. Open it to verify your account, then log in.</p>
+      <a href="login.html">Go to login</a>
+    </div>
+
+    <p class="auth-form-footnote">Already have an account? <a href="login.html">Log in</a></p>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase.js"></script>
+  <script>
+    const pwInput = document.getElementById('password');
+    const pwToggle = document.getElementById('toggle-password');
+    pwToggle.addEventListener('click', () => {
+      const hidden = pwInput.type === 'password';
+      pwInput.type = hidden ? 'text' : 'password';
+      pwToggle.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+    });
+
+    const form = document.getElementById('register-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const banner = document.getElementById('form-banner');
+    const bannerText = document.getElementById('form-banner-text');
+
+    function setFieldError(id, show) {
+      const input = document.getElementById(id);
+      if (input) {
+        input.classList.toggle('has-error', show);
+        if (show) shakeElement(input);
+      }
+      const err = document.getElementById(id + '-error');
+      if (err) err.classList.toggle('show', show);
+    }
+
+    function shakeElement(element) {
+      element.classList.remove('shake');
+      void element.offsetWidth;
+      element.classList.add('shake');
+      element.addEventListener('animationend', () => element.classList.remove('shake'), { once: true });
+    }
+
+    function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      banner.classList.remove('show');
+
+      const username = document.getElementById('username').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const phone = document.getElementById('phone').value.trim();
+      const password = document.getElementById('password').value;
+
+      const usernameValid = username.length >= 2;
+      const emailValid = isValidEmail(email);
+      const phoneDigits = phone.replace(/\D/g, '');
+      const phoneValid = /^\+[1-9][\d\s().-]+$/.test(phone) && phoneDigits.length >= 8 && phoneDigits.length <= 15;
+      const passwordValid = password.length >= 6;
+
+      setFieldError('username', !usernameValid);
+      setFieldError('email', !emailValid);
+      setFieldError('phone', !phoneValid);
+      setFieldError('password', !passwordValid);
+      if (!usernameValid || !emailValid || !phoneValid || !passwordValid) {
+        document.querySelector('.field-input.has-error')?.focus();
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating account...';
+
+      let accountCreated = false;
+      try {
+        const credential = await window.neighborlyAuth.createUserWithEmailAndPassword(email, password);
+        accountCreated = true;
+        await credential.user.updateProfile({ displayName: username });
+        const handle = username.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.]/g, '');
+        localStorage.setItem(`neighborly_profile_${credential.user.uid}`, JSON.stringify({
+          name: username,
+          handle,
+          phone
+        }));
+        await credential.user.sendEmailVerification();
+        await window.neighborlyAuth.signOut();
+        document.getElementById('verification-notice').hidden = false;
+        form.hidden = true;
+        document.querySelector('.auth-desc').textContent = `A verification link was sent to ${email}. Verify your email, then log in to continue.`;
+      } catch (error) {
+        if (accountCreated) {
+          await window.neighborlyAuth.signOut().catch(() => {});
+          document.getElementById('verification-notice-text').textContent = 'Your account was created, but we could not send the verification email right now. Log in to request another verification email.';
+          document.getElementById('verification-notice').hidden = false;
+          form.hidden = true;
+          return;
+        }
+        shakeElement(document.querySelector('.auth-card'));
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create account';
+        bannerText.textContent = error.message || 'Something went wrong. Try again.';
+        banner.classList.add('show');
+      }
+    });
+  </script>
+</body>
+</html>

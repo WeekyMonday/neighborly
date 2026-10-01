@@ -1,0 +1,16 @@
+# Render.com Blueprint — deploys Neighborly as a public website.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: neighborly
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api
+    envVars:
+      - key: NODE_VERSION
+        value: "20.11.1"
+      - key: JWT_SECRET
+        generateValue: true

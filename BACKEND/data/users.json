@@ -1,0 +1,11 @@
+[
+  {
+    "id": "mt8uy7hgc66576",
+    "name": "Test User",
+    "email": "test@example.com",
+    "password": "secret123",
+    "handle": "test.user",
+    "initials": "TU",
+    "createdAt": "2026-08-25T16:06:51.749Z"
+  }
+]

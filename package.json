@@ -1,0 +1,32 @@
+{
+  "name": "neighborly",
+  "version": "1.0.0",
+  "description": "Neighborly community chat app",
+  "main": "main.js",
+  "scripts": {
+    "start": "node BACKEND/server.js",
+    "start:web": "node BACKEND/server.js",
+    "start:desktop": "electron .",
+    "server": "node BACKEND/server.js",
+    "test": "node tests/socket-chat.test.js && node tests/voice-room.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "firebase": "^12.19.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0"
+  }
+}
