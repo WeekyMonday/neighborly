@@ -135,6 +135,25 @@ node scripts/ship.js --dry-run
 > `git` may not be on PATH until you restart VS Code. Until then, use the full
 > path: `& "C:\Program Files\Git\cmd\git.exe" push`
 
+> **On this PC, type `npm.cmd` instead of `npm`** in PowerShell — the
+> execution policy blocks `npm.ps1`:
+>
+> ```powershell
+> npm.cmd run ship
+> ```
+>
+> VS Code's integrated terminal, or `cmd`, use plain `npm` fine. The `node`
+> commands (`node scripts/ship.js`) work either way.
+
+### Tests run before anything goes live
+
+`.github/workflows/ci.yml` runs `npm test` (socket chat, friend requests,
+voice rooms, invite links) on every push to `main`. Local:
+
+```powershell
+npm.cmd test
+```
+
 ### Option A — Railway (fastest, no Git required)
 
 ```powershell

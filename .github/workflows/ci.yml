@@ -1,0 +1,23 @@
+name: CI
+
+# Guards the live site: every push to main is tested here, and Render
+# auto-deploys the same commit. Tests are fast (~seconds), so a red build is
+# caught immediately instead of shipping a broken site.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: npm test
