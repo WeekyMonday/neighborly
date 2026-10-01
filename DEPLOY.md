@@ -145,14 +145,24 @@ node scripts/ship.js --dry-run
 > VS Code's integrated terminal, or `cmd`, use plain `npm` fine. The `node`
 > commands (`node scripts/ship.js`) work either way.
 
-### Tests run before anything goes live
+### Tests
 
-`.github/workflows/ci.yml` runs `npm test` (socket chat, friend requests,
-voice rooms, invite links) on every push to `main`. Local:
+Run them locally after any backend or realtime-protocol change:
 
 ```powershell
 npm.cmd test
 ```
+
+That covers socket chat, friend requests, voice rooms and invite links, and it
+takes a couple of seconds.
+
+> **Optional: GitHub Actions.** There is deliberately **no**
+> `.github/workflows/` file in this repo. Adding one requires the Git
+> credential used by `git push` to carry the `workflow` scope — this PC's
+> stored OAuth token does not, so the push is rejected with
+> *"refusing to allow an OAuth App to create or update workflow"*, which would
+> block every future push. If you ever re-authenticate with the `workflow`
+> scope, a CI workflow can be added safely.
 
 ### Option A — Railway (fastest, no Git required)
 
