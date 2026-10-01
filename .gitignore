@@ -8,6 +8,11 @@ node_modules/
 *.log
 npm-debug.log*
 
+# Local realtime state (durable file backend for development).
+# Never commit these — they are per-machine data.
+BACKEND/data/realtime-state.json
+BACKEND/data/realtime-state.json.tmp
+
 # Scratch files from running git/ship commands by hand
 test-output.txt
 ship-check.txt

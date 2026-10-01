@@ -5973,6 +5973,32 @@
         <p>Select a server or conversation room inside the sidebar categories on the left to start typing messages.</p>
       </div>
 
+      <!-- Direct Message Conversation: private, two people only -->
+      <section id="dm-conversation-screen" class="dm-conversation hidden" aria-label="Direct message">
+        <header class="dm-conversation-header">
+          <div class="dm-conversation-peer">
+            <span id="dm-peer-avatar" class="dm-peer-avatar">?</span>
+            <div class="dm-conversation-heading">
+              <strong id="dm-peer-name">Conversation</strong>
+              <small id="dm-peer-status">Offline</small>
+            </div>
+          </div>
+          <button class="dm-conversation-close" onclick="closeDirectMessage()" title="Close conversation">&times;</button>
+        </header>
+        <div id="dm-message-list" class="dm-message-list" aria-live="polite"></div>
+        <div id="dm-typing-indicator" class="dm-typing-indicator hidden"></div>
+        <form class="dm-composer" onsubmit="return sendDirectMessage(event)">
+          <input
+            id="dm-message-input"
+            type="text"
+            autocomplete="off"
+            maxlength="4000"
+            placeholder="Message @friend"
+            oninput="handleDirectMessageTyping()">
+          <button type="submit" class="dm-send-button" title="Send message">Send</button>
+        </form>
+      </section>
+
       <section id="friends-home-screen" class="friends-home-screen hidden" aria-label="Friends">
         <header class="friends-home-header">
           <div class="friends-home-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg><h1>Friends</h1></div>
@@ -7439,6 +7465,85 @@
       modalRoomContextType: 'text' 
     };
 
+    /* ======================================================================
+       LOCAL WORKSPACE PERSISTENCE
+       ----------------------------------------------------------------------
+       Servers (and their channels/messages) used to live only in this
+       in-memory object, so every page refresh wiped anything the user had
+       created. They are now mirrored to localStorage, scoped per account so
+       two people sharing a browser do not see each other's servers.
+       ====================================================================== */
+
+    function workspaceStorageKey() {
+      const identity = (savedSession && (savedSession.email || savedSession.uid)) || 'guest';
+      return `neighborly_workspace_${String(identity).toLowerCase()}`;
+    }
+
+    const MAX_PERSISTED_MESSAGES_PER_CHANNEL = 200;
+
+    function saveLocalWorkspace() {
+      try {
+        // Copy first: JSON.stringify walks the live objects, and a message can
+        // be pushed while we are serialising.
+        const servers = JSON.parse(JSON.stringify(appState.servers || []));
+        const messages = {};
+        for (const [key, list] of Object.entries(appState.messages || {})) {
+          messages[key] = (list || []).slice(-MAX_PERSISTED_MESSAGES_PER_CHANNEL);
+        }
+        localStorage.setItem(
+          workspaceStorageKey(),
+          JSON.stringify({
+            version: 1,
+            savedAt: Date.now(),
+            servers,
+            messages,
+            collapseState: appState.collapseState,
+          })
+        );
+      } catch (error) {
+        // Quota exceeded or private mode: never let saving break the app.
+        console.warn('Could not save your workspace locally.', error);
+      }
+    }
+
+    let workspaceSaveTimer = null;
+    function scheduleWorkspaceSave() {
+      if (workspaceSaveTimer) return;
+      workspaceSaveTimer = setTimeout(() => {
+        workspaceSaveTimer = null;
+        saveLocalWorkspace();
+      }, 800);
+    }
+
+    function loadLocalWorkspace() {
+      try {
+        const raw = localStorage.getItem(workspaceStorageKey());
+        if (!raw) return false;
+        const saved = JSON.parse(raw);
+        if (!saved || saved.version !== 1 || !Array.isArray(saved.servers)) return false;
+
+        appState.servers = saved.servers;
+        if (saved.messages && typeof saved.messages === 'object') {
+          appState.messages = saved.messages;
+        }
+        if (saved.collapseState) {
+          appState.collapseState = { ...appState.collapseState, ...saved.collapseState };
+        }
+        return true;
+      } catch (error) {
+        console.warn('Could not restore your workspace; starting fresh.', error);
+        return false;
+      }
+    }
+
+    // Save on the way out, and periodically so long sessions are never lost
+    // if the tab is killed without warning.
+    window.addEventListener('beforeunload', saveLocalWorkspace);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveLocalWorkspace();
+    });
+    setInterval(saveLocalWorkspace, 5000);
+
     let waveAnimationId = null;
     let incomingNotificationAudio = null;
 
@@ -7498,6 +7603,10 @@
       const mobileAvatar = document.getElementById('mobile-tab-avatar');
       applyAvatarToElement(mobileAvatar, appState.currentUser.initials, appState.currentUser.color, appState.currentUser.avatarImage);
 
+      // Restore the servers and messages this account created previously.
+      // Without this, every refresh started from an empty server list.
+      loadLocalWorkspace();
+
       // Initial Render lists
       renderServers();
       renderChannels();
@@ -7505,8 +7614,10 @@
       renderFriendsHome();
       applyInviteFromUrl();
 
-      // Start with a clean account workspace; users can add their own server.
-      selectWorkspace('dm');
+      // Land on the last-used space, or a clean DM view for a first-time user.
+      selectWorkspace(appState.servers.length ? 'server' : 'dm');
+      if (appState.servers.length) selectServer(appState.servers[0].id);
+      scheduleWorkspaceSave();
 
       // Set up the mobile nav shell (bottom tabs + card screens) if on a narrow viewport.
       // Some Android WebViews (e.g. in-app browsers like Acode's) haven't finished
@@ -7540,6 +7651,167 @@
     });
 
     /* =========================================================================
+       DIRECT MESSAGES
+       =========================================================================
+       DMs are private: the server puts both people into a room keyed by the
+       sorted handle pair and only ever emits inside that room. You can only
+       message someone who is already your friend.
+       ========================================================================= */
+    const directMessages = {
+      activePeer: null,   // normalized handle
+      peer: null,         // profile object
+      messages: [],       // messages for the active conversation
+      typingSentAt: 0
+    };
+
+    function normalizeDmHandle(value) {
+      return String(value || '').trim().replace(/^@/, '').toLowerCase();
+    }
+
+    function formatDmTime(value) {
+      const date = value ? new Date(value) : new Date();
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderDirectMessage() {
+      const screen = document.getElementById('dm-conversation-screen');
+      const idle = document.getElementById('content-workspace-dm-screen');
+      if (!screen || !idle) return;
+
+      if (!directMessages.activePeer) {
+        screen.classList.add('hidden');
+        idle.classList.remove('hidden');
+        return;
+      }
+
+      idle.classList.add('hidden');
+      screen.classList.remove('hidden');
+
+      const peer = directMessages.peer || { handle: directMessages.activePeer };
+      const avatar = document.getElementById('dm-peer-avatar');
+      const nameEl = document.getElementById('dm-peer-name');
+      const statusEl = document.getElementById('dm-peer-status');
+      const input = document.getElementById('dm-message-input');
+      if (avatar) {
+        avatar.textContent = peer.initials || (peer.handle || '?').slice(0, 2).toUpperCase();
+        avatar.style.background = peer.color || '#7c6ff7';
+      }
+      if (nameEl) nameEl.textContent = peer.name || `@${peer.handle || ''}`;
+      if (statusEl) statusEl.textContent = peer.online ? 'Online' : 'Offline';
+      if (input) input.placeholder = `Message @${peer.handle || 'friend'}`;
+
+      const list = document.getElementById('dm-message-list');
+      if (!list) return;
+      const myHandle = normalizeDmHandle(appState.currentUser?.handle);
+      list.innerHTML = directMessages.messages
+        .map((message) => {
+          const mine = normalizeDmHandle(message.sender) === myHandle;
+          const who = mine ? 'You' : (peer.name || `@${peer.handle || ''}`);
+          const body = message.text || (message.attachment ? 'Attachment' : '');
+          return `<div class="dm-message ${mine ? 'mine' : 'theirs'}">
+            <span class="dm-message-author">${escapeFriendsText(who)}</span>
+            <div class="dm-bubble">${escapeFriendsText(body)}</div>
+            <time class="dm-message-time">${formatDmTime(message.createdAt)}</time>
+          </div>`;
+        })
+        .join('') || `<p class="dm-empty-state">No messages yet — say hello.</p>`;
+      list.scrollTop = list.scrollHeight;
+    }
+  function openDirectMessage(handle) {
+      const peerHandle = normalizeDmHandle(handle);
+      if (!peerHandle) return;
+      const socket = window.neighborlySocket;
+      if (!socket || !socket.connected) {
+        showFriendToast('Connecting to the Neighborly service… try again in a moment.', true);
+        return;
+      }
+
+      directMessages.activePeer = peerHandle;
+      directMessages.peer =
+        appState.friends.find((friend) => normalizeDmHandle(friend.handle) === peerHandle) ||
+        { handle: peerHandle };
+      directMessages.messages = [];
+      renderDirectMessage();
+
+      if (appState.activeWorkspace !== 'dm') selectWorkspace('dm');
+      document.getElementById('workspace-dm-flow')?.classList.remove('hidden');
+      document.getElementById('desktop-dm-flow')?.classList.add('hidden');
+
+      socket.emit('dm:open', { to: peerHandle });
+      const input = document.getElementById('dm-message-input');
+      if (input) setTimeout(() => input.focus(), 50);
+    }
+
+    function closeDirectMessage() {
+      directMessages.activePeer = null;
+      directMessages.peer = null;
+      directMessages.messages = [];
+      renderDirectMessage();
+      document.getElementById('workspace-dm-flow')?.classList.remove('hidden');
+      document.getElementById('desktop-dm-flow')?.classList.add('hidden');
+    }
+
+    function sendDirectMessage(event) {
+      if (event) event.preventDefault();
+      const socket = window.neighborlySocket;
+      const input = document.getElementById('dm-message-input');
+      const text = (input?.value || '').trim();
+      if (!directMessages.activePeer || !socket || !socket.connected) return false;
+      if (!text) return false;
+
+      socket.emit('dm:send', { to: directMessages.activePeer, text });
+      socket.emit('dm:typing', { to: directMessages.activePeer, typing: false });
+      if (input) input.value = '';
+      return false;
+    }
+
+    function handleDirectMessageTyping() {
+      const socket = window.neighborlySocket;
+      if (!socket || !socket.connected || !directMessages.activePeer) return;
+      const now = Date.now();
+      if (now - directMessages.typingSentAt < 1500) return; // throttle
+      directMessages.typingSentAt = now;
+      socket.emit('dm:typing', { to: directMessages.activePeer, typing: true });
+    }
+
+    /** True when a DM payload belongs to the conversation currently open. */
+    function isForActiveConversation(payload = {}) {
+      const key = String(payload.conversationKey || '');
+      if (!directMessages.activePeer) return false;
+      const [first, second] = key.split(':');
+      const peer = directMessages.activePeer;
+      return first === peer || second === peer;
+    }
+
+    function handleDmHistory(payload = {}) {
+      if (!isForActiveConversation(payload)) return;
+      directMessages.peer = payload.peer || directMessages.peer;
+      directMessages.messages = payload.messages || [];
+      renderDirectMessage();
+    }
+
+    function handleDmMessage(payload = {}) {
+      if (!isForActiveConversation(payload)) return;
+      // The server echoes our own message back, so de-duplicate by id.
+      if (directMessages.messages.some((message) => message.id === payload.id)) return;
+      directMessages.messages.push(payload);
+      renderDirectMessage();
+    }
+
+    function handleDmTyping(payload = {}) {
+      const indicator = document.getElementById('dm-typing-indicator');
+      if (!indicator) return;
+      if (!payload.typing || !isForActiveConversation(payload)) {
+        indicator.classList.add('hidden');
+        return;
+      }
+      const name = directMessages.peer?.name || `@${directMessages.activePeer}`;
+      indicator.textContent = `${name} is typing…`;
+      indicator.classList.remove('hidden');
+    }
+
+    /* =========================================================================
        Lists and Elements Redraw Functions
        ========================================================================= */
     function renderServers() {
@@ -7562,6 +7834,11 @@
         `;
         container.appendChild(item);
       });
+
+      // renderServers() runs after every change to the server list (wizard
+      // completion, invite joins, deletes), so it is the one reliable hook
+      // for persisting the workspace.
+      scheduleWorkspaceSave();
     }
 
     function renderChannels() {
@@ -8446,7 +8723,7 @@
       const query = (document.getElementById('desktop-dm-search-input')?.value || '').trim().toLowerCase();
       const contacts = appState.friends.filter(friend => !query || `${friend.name} ${friend.handle} ${friend.lastMessage || ''}`.toLowerCase().includes(query));
       list.innerHTML = contacts.map(friend => `
-        <button class="desktop-dm-contact" onclick="openMemberProfile('${escapeFriendsText(friend.name)}')">
+        <button class="desktop-dm-contact" onclick="openDirectMessage('${escapeFriendsText(String(friend.handle || '').toLowerCase())}')">
           <span class="desktop-dm-avatar" style="background:${friend.color}">${escapeFriendsText(friend.initials)}<i class="${friend.online ? 'online' : ''}"></i></span>
           <span class="desktop-dm-contact-copy"><strong>${escapeFriendsText(friend.name)}</strong><small>${escapeFriendsText(friend.lastMessage || (friend.online ? 'Online' : 'Offline'))}</small></span>
         </button>`).join('') || `<p class="friends-empty-state">${query ? 'No conversations found.' : 'No direct messages yet.'}</p>`;
@@ -10949,6 +11226,10 @@
         const feedback = document.getElementById('friend-add-feedback');
         if (feedback && !document.getElementById('friend-add-page')?.hidden) feedback.textContent = payload.message || '';
       });
+      socket.on('dm:history', handleDmHistory);
+      socket.on('dm:message', handleDmMessage);
+      socket.on('dm:typing', handleDmTyping);
+      socket.on('dm:error', (payload = {}) => showFriendToast(payload.message || 'Direct message failed.', true));
       if (socket.connected) register();
       return socket;
     }

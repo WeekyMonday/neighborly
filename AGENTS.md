@@ -37,9 +37,11 @@ Don't hand-edit it — let the script do it.
 
 ## In-memory data
 
-Chat history, friends and presence live in memory (`BACKEND/socketManager.js`),
-so they reset on every redeploy. Don't present that as a deploy failure; it's
-expected on this host.
+Chat history in **server** channels, friends, presence and DM history persist
+to Supabase once `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set
+(see `BACKEND/supabase-schema.sql` and DEPLOY.md section 3b). Online/offline
+presence is always ephemeral — it reflects live sockets, so it is expected to
+change. Don't report that as a bug.
 
 ## Tests
 

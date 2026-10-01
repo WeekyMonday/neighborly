@@ -851,3 +851,63 @@ body.theme-light .friend-add-input-row input,
 body.theme-light .settings-modal-card input,
 body.theme-light .settings-modal-card textarea { background: #e8eaf0; }
 body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e6ebf5, #f0f1f5); }
+/* === Direct message conversation ========================================= */
+.dm-conversation {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--discord-chatBg, #313338);
+}
+.dm-conversation.hidden { display: none; }
+.dm-conversation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+  flex: 0 0 auto;
+}
+.dm-conversation-peer { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dm-peer-avatar {
+  width: 32px; height: 32px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; color: #fff; font-size: 12px; font-weight: 700;
+}
+.dm-conversation-heading { display: flex; flex-direction: column; min-width: 0; }
+.dm-conversation-heading strong { color: #f2f3f5; font-size: 15px; }
+.dm-conversation-heading small { color: #949ba4; font-size: 12px; }
+.dm-conversation-close {
+  border: 0; background: transparent; color: #949ba4;
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 4px;
+}
+.dm-conversation-close:hover { color: #dbdee1; background: rgba(255, 255, 255, 0.06); }
+.dm-message-list {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.dm-message { display: flex; flex-direction: column; max-width: 76%; }
+.dm-message.mine { align-self: flex-end; align-items: flex-end; }
+.dm-message.theirs { align-self: flex-start; align-items: flex-start; }
+.dm-message-author { font-size: 11px; font-weight: 600; color: #949ba4; margin-bottom: 3px; }
+.dm-bubble {
+  padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.45;
+  color: #dbdee1; background: #404249; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.dm-message.mine .dm-bubble { background: #5865f2; color: #fff; }
+.dm-message-time { font-size: 10px; color: #72767d; margin-top: 3px; }
+.dm-empty-state { color: #949ba4; font-size: 14px; text-align: center; margin: 24px 0; }
+.dm-typing-indicator { flex: 0 0 auto; padding: 4px 16px; font-size: 12px; font-style: italic; color: #949ba4; }
+.dm-typing-indicator.hidden { display: none; }
+.dm-composer { flex: 0 0 auto; display: flex; gap: 8px; padding: 0 16px 16px; }
+.dm-composer input {
+  flex: 1 1 auto; min-width: 0; padding: 11px 14px; border-radius: 8px;
+  border: 0; outline: 0; font: inherit; font-size: 14px; color: #dbdee1; background: #383a40;
+}
+.dm-composer input:focus { box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.4); }
+.dm-send-button {
+  flex: 0 0 auto; padding: 0 18px; border: 0; border-radius: 8px;
+  font: inherit; font-weight: 600; font-size: 14px; color: #fff; background: #5865f2; cursor: pointer;
+}
+.dm-send-button:hover { background: #4752c4; }

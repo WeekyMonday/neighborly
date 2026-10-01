@@ -9,10 +9,16 @@ require("dotenv").config();
 const app = express();
 const authRoutes = require("./routes/auth");
 const { createRealtimeStore } = require("./socketManager");
+const { createPersistence } = require("./config/persistence");
 const { createServerInviteToken, verifyServerInviteToken } = require("./inviteTokens");
 
 const neighborlyEntryFile = path.join(__dirname, "../FRONTEND/www/Neighborly(Update).html");
-const realtimeStore = createRealtimeStore();
+
+// Durable storage (Supabase when configured). Falls back to memory, so the
+// app still boots unchanged if the database is unreachable or not set up yet.
+const persistence = createPersistence();
+const realtimeStore = createRealtimeStore(persistence);
+console.log(`[persistence] backend: ${persistence.mode}`);
 const inviteSecret = process.env.INVITE_SECRET || process.env.JWT_SECRET || crypto.randomBytes(32).toString("hex");
 const socketsByHandle = new Map(); // normalized handle -> Set<socket>
 
@@ -217,6 +223,84 @@ io.on("connection", (socket) => {
     socket.emit("online-users", realtimeStore.getOnlineUsers());
   });
 
+  // --- Direct messages ------------------------------------------------------
+  // DMs use a private Socket.io room named after the *sorted* handle pair.
+  // Only the two participants are ever joined to it, so a DM can never be
+  // received by anyone else -- the sender is never trusted for the room name,
+  // and non-friends cannot open a room at all.
+
+  function dmGuard(socket, payload = {}) {
+    const fromHandle = socket.user?.handle;
+    const toHandle = payload.to || payload.handle || "";
+    if (!fromHandle) {
+      socket.emit("dm:error", { message: "Reconnect to Neighborly and try again." });
+      return null;
+    }
+    if (!toHandle) {
+      socket.emit("dm:error", { message: "Choose who to message." });
+      return null;
+    }
+
+    const friends = realtimeStore.getFriends(fromHandle);
+    const isFriend = friends.some((friend) => String(friend.handle).toLowerCase() === String(toHandle).toLowerCase());
+    if (!isFriend) {
+      socket.emit("dm:error", { message: `You can only message friends. Add @${toHandle} first.` });
+      return null;
+    }
+    return { fromHandle, toHandle };
+  }
+
+  socket.on("dm:open", async (payload = {}) => {
+    const guard = dmGuard(socket, payload);
+    if (!guard) return;
+
+    const room = realtimeStore.dmRoomKey(guard.fromHandle, guard.toHandle);
+    socket.join(room);
+    // Keep the peer online too, so their open tab receives messages live.
+    const peerSockets = socketsByHandle.get(String(guard.toHandle).replace(/^@/, "").toLowerCase());
+    if (peerSockets) for (const peer of peerSockets) peer.join(room);
+
+    const history = await realtimeStore.getDmMessages(guard.fromHandle, guard.toHandle, 100);
+    socket.emit("dm:history", {
+      conversationKey: room,
+      peer: realtimeStore.findProfile(guard.toHandle),
+      messages: history,
+    });
+  });
+
+  socket.on("dm:send", async (payload = {}) => {
+    const guard = dmGuard(socket, payload);
+    if (!guard) return;
+
+    const text = String(payload.text || "").trim();
+    const attachment = payload.attachment || null;
+    if (!text && !attachment) return;
+
+    const room = realtimeStore.dmRoomKey(guard.fromHandle, guard.toHandle);
+    const message = await realtimeStore.addDmMessage({
+      from: guard.fromHandle,
+      to: guard.toHandle,
+      text,
+      attachment,
+      clientMessageId: payload.clientMessageId || null,
+    });
+    if (!message) return;
+
+    // Room-only emit: never io.emit, so this stays private to the pair.
+    io.to(room).emit("dm:message", message);
+  });
+
+  socket.on("dm:typing", (payload = {}) => {
+    const guard = dmGuard(socket, payload);
+    if (!guard) return;
+    const room = realtimeStore.dmRoomKey(guard.fromHandle, guard.toHandle);
+    socket.to(room).emit("dm:typing", {
+      conversationKey: room,
+      from: guard.fromHandle,
+      typing: payload.typing !== false,
+    });
+  });
+
   socket.on("friend:sync", () => {
     if (socket.user?.handle) socket.emit("friend:state", realtimeStore.getFriendState(socket.user.handle));
   });
@@ -412,4 +496,9 @@ server.on("error", (error) => {
   throw error;
 });
 
-listenOnPort(preferredPort);
+// Load durable state (profiles, friends, pending requests) before accepting
+// traffic, so the first person to connect already sees their real friend list.
+realtimeStore
+  .hydrate()
+  .catch((error) => console.warn("[persistence] hydrate failed:", error.message))
+  .finally(() => listenOnPort(preferredPort));

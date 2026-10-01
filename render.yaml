@@ -18,3 +18,12 @@ services:
         generateValue: true
       - key: JWT_SECRET
         generateValue: true
+      # --- Durable storage (friends, DMs, profiles) -------------------------
+      # Run BACKEND/supabase-schema.sql once in the Supabase SQL Editor, then
+      # paste your project's values here. Set both to "Sync: false" and fill
+      # them in, or leave them unset to fall back to in-memory storage.
+      # Never commit the service_role key — it bypasses all RLS.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

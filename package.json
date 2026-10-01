@@ -12,7 +12,7 @@
     "deploy": "node scripts/setup-hooks.js && node scripts/ship.js",
     "setup": "node scripts/setup-hooks.js",
     "smoke": "node smoke.js",
-    "test": "node tests/socket-chat.test.js && node tests/friend-request.test.js && node tests/voice-room.test.js && node tests/invite-links.test.js"
+    "test": "node tests/socket-chat.test.js && node tests/friend-request.test.js && node tests/voice-room.test.js && node tests/invite-links.test.js && node tests/persistence.test.js && node tests/dm-privacy.test.js"
   },
   "engines": {
     "node": ">=18.0.0"

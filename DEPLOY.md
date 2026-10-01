@@ -263,14 +263,92 @@ The `*.onrender.com` subdomain keeps working alongside your custom domain.
 
 ---
 
+## 3b. Making friends and DMs stick ✅
+
+**This is the fix for "my friends disappeared" and "my server vanished".**
+
+There were two separate bugs:
+
+1. **Servers were never saved at all.** `appState.servers` was a plain
+   in-memory array, so a browser refresh wiped everything you had created.
+   Servers (and their channels/messages) are now mirrored to `localStorage`,
+   keyed per signed-in account.
+2. **Friends and DMs lived only in the server's RAM.** Render's free tier
+   sleeps and restarts the container, and every deploy wiped them. They now
+   persist to Supabase.
+
+### One-time setup
+
+**Step 1 — create the tables.** Open your Supabase project → **SQL Editor** →
+**New query**, paste the whole of [`BACKEND/supabase-schema.sql`](BACKEND/supabase-schema.sql),
+and click **Run**. It creates four tables and locks them down with RLS.
+
+**Step 2 — get your keys.** Supabase → **Project Settings** → **API**:
+
+- `Project URL` → this is `SUPABASE_URL`
+- `service_role` key (the `sb_secret_…` / JWT one under "service_role") →
+  this is `SUPABASE_SERVICE_ROLE_KEY`
+
+> ⚠️ The **service_role** key bypasses all security rules. It belongs only in
+> a server-side environment variable. Never put it in `FRONTEND/`, never commit
+> it. Only the `anon` key is safe in the browser.
+
+**Step 3 — add them to Render.** Dashboard → your service → **Environment** →
+add:
+
+| Key | Value |
+|-----|-------|
+| `SUPABASE_URL` | `https://<your-ref>.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | *(your service_role key)* |
+
+Save, then `npm run ship` (or restart the service) to pick it up.
+
+**Confirm it worked.** The Render logs should print:
+
+```
+[persistence] backend: supabase
+[persistence] hydrated N profiles, M friendships, K requests
+```
+
+If it still says `backend: memory`, the env vars didn't reach the service.
+
+### Without Supabase
+
+If the env vars are absent the app still runs — it just falls back to
+in-memory storage (old behaviour) or, for local development, a durable JSON
+file:
+
+```powershell
+$env:NEIGHBORLY_PERSISTENCE = "file"   # writes BACKEND/data/realtime-state.json
+npm.cmd start
+```
+
+### Direct messages are genuinely private
+
+DMs use a Socket.io room named after the **sorted handle pair**
+(`alice:bob`). The server:
+
+- refuses to open a DM with anyone who isn't a friend,
+- never trusts the client for the room name — it derives it from the
+  authenticated sender,
+- emits to `io.to(room)` only, never `io.emit`, so no third party can receive
+  it, and
+- stores each conversation under its own key, so no room can leak another's
+  messages.
+
+`tests/dm-privacy.test.js` asserts all of this with three connected clients.
+
+---
+
 ## 4. Things to know about this app
 
-- **Data persistence:** chat history and online users live in memory
-  (`BACKEND/socketManager.js`), and locally-registered accounts are written to
-  `BACKEND/data/users.json`. On most hosts the filesystem is **ephemeral**, so
-  this data resets on restart/redeploy. Firebase Auth is the real login system,
-  so users still work — but move chat to a database (Firebase/Supabase/Postgres)
-  if you need history to survive restarts.
+- **Data persistence:** friends, friend requests, profiles and DM history are
+  stored in Supabase when it's configured (see section 3b), so they survive
+  redeploys and Render's free-tier sleep. Without it they fall back to memory
+  and reset on restart. Servers/channels/messages a user creates are mirrored
+  to that browser's `localStorage`, so a refresh never loses them — but they
+  are per-browser, not shared between devices. Firebase/Supabase Auth remains
+  the real login system either way.
 - **Free tiers sleep:** Render's free web service spins down after inactivity, so
   the first visit may take ~30–60s to wake up.
 - **Friends:** friend requests, friends and presence are relayed over Socket.io
