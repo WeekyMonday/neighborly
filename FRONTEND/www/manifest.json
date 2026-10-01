@@ -2,7 +2,7 @@
   "name": "Echo - Campus Chat",
   "short_name": "Echo",
   "description": "Real-time messaging and voice chat for campus communities",
-  "start_url": "/Neighborly.html",
+  "start_url": "/login.html",
   "display": "standalone",
   "background_color": "#36393F",
   "theme_color": "#7289DA",

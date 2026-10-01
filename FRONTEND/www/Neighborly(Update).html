@@ -6796,6 +6796,12 @@
           <button class="account-settings-nav-item" onclick="document.getElementById('account-section-security').scrollIntoView({behavior:'smooth',block:'start'})"><span>◌</span>Messaging Permissions</button>
           <button class="account-settings-nav-item" onclick="document.getElementById('account-section-security').scrollIntoView({behavior:'smooth',block:'start'})"><span>♟</span>Notifications</button>
         </nav>
+        <div class="account-settings-sidebar-footer">
+          <button class="account-settings-logout" type="button" onclick="logOut()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"></path><path d="M15 12H3"></path><path d="M21 19V5a2 2 0 0 0-2-2h-6"></path></svg>
+            <span>Log Out</span>
+          </button>
+        </div>
       </aside>
 
       <main class="account-page-content">
@@ -6888,6 +6894,13 @@
               <span class="account-management-description">Permanently delete your account and its associated data.</span>
             </span>
             <span class="account-management-action danger-action">Delete Account</span>
+          </div>
+          <div class="account-row account-management-row" onclick="logOut()">
+            <span class="account-management-copy">
+              <span class="account-row-label">Log out</span>
+              <span class="account-management-description">Sign out of Neighborly on this device. You can log back in anytime.</span>
+            </span>
+            <span class="account-management-action">Log Out</span>
           </div>
         </div>
 
@@ -7235,6 +7248,20 @@
   <!-- =========================================================================
        CORE STATE MACHINE SCRIPT (Standard Vanilla JS execution)
        ========================================================================= -->
+  <script>
+    (() => {
+      let session = null;
+      try {
+        session = JSON.parse(localStorage.getItem('neighborly_session') || 'null');
+      } catch (error) {
+        localStorage.removeItem('neighborly_session');
+      }
+      if (!session || !session.email) {
+        document.documentElement.style.visibility = 'hidden';
+        window.location.replace('login.html');
+      }
+    })();
+  </script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="js/webrtcClient.js"></script>
   <script>
@@ -9877,6 +9904,53 @@
       triggerFeedback(10);
       const confirmed = confirm("Delete your account permanently? This cannot be undone. (Demo only)");
       if (confirmed) alert("Account deletion would be processed here. (Demo only — nothing actually changed.)");
+    }
+
+    /* =========================================================================
+       Log out — ends the session and returns to the login screen.
+       ========================================================================= */
+    function loadScriptOnce(src) {
+      return new Promise((resolve) => {
+        if (document.querySelector(`script[data-neighborly-src="${src}"]`)) return resolve();
+        const script = document.createElement('script');
+        script.src = src;
+        script.dataset.neighborlySrc = src;
+        script.onload = () => resolve();
+        script.onerror = () => resolve(); // still proceed with the logout if the SDK can't load
+        document.head.appendChild(script);
+      });
+    }
+
+    /* Loads the Firebase SDK only when needed (keeps normal app startup fast). */
+    async function ensureFirebaseAuth() {
+      if (window.neighborlyAuth) return window.neighborlyAuth;
+      await loadScriptOnce('https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js');
+      await loadScriptOnce('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js');
+      await loadScriptOnce('js/firebase.js');
+      return window.neighborlyAuth || null;
+    }
+
+    async function logOut() {
+      triggerFeedback(10);
+      const confirmed = confirm("Log out of Neighborly? You can log back in anytime.");
+      if (!confirmed) return;
+
+      try {
+        const auth = await ensureFirebaseAuth();
+        if (auth && typeof auth.signOut === 'function') {
+          await auth.signOut();
+        }
+      } catch (error) {
+        console.warn('Could not sign out of Firebase Auth:', error);
+      }
+
+      try {
+        localStorage.removeItem('neighborly_session');
+      } catch (error) {
+        console.warn('Could not clear the saved session:', error);
+      }
+
+      window.location.href = 'login.html';
     }
 
     function mockTermsLink() {

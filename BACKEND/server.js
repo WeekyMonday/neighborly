@@ -34,7 +34,7 @@ app.get("/Neighborly.html", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.sendFile(neighborlyEntryFile);
+  res.sendFile(path.join(__dirname, "../FRONTEND/www/login [updated].html"));
 });
 
 app.get("/api", (req, res) => {
