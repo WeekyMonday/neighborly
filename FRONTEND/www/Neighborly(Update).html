@@ -8433,6 +8433,16 @@
       renderDesktopDMList();
     }
 
+    function sendFriendRequestByHandle(handle) {
+      const socket = window.neighborlySocket;
+      if (!socket || !socket.connected) {
+        return { ok: false, message: 'Connecting to the Neighborly service… try again in a moment.' };
+      }
+      if (!handle) return { ok: false, message: 'Enter a valid username.' };
+      socket.emit('friend:request', { to: handle });
+      return { ok: true, message: `Friend request sent to @${handle}.` };
+    }
+
     function submitFriendRequest(event, isMobile = false) {
       event.preventDefault();
       const input = document.getElementById(isMobile ? 'mobile-friend-handle-input' : 'friend-handle-input');
@@ -8442,17 +8452,24 @@
         if (feedback) feedback.textContent = 'Enter a valid username.';
         return;
       }
-      if (feedback) feedback.textContent = 'Friend requests are not connected to the online service yet.';
+      const result = sendFriendRequestByHandle(handle);
+      if (feedback) feedback.textContent = result.message;
+      if (result.ok && input) input.value = '';
     }
 
     function respondToFriendRequest(index, accepted) {
       const [request] = appState.friendRequests.splice(index, 1);
-      if (accepted && request) appState.friends.push({ ...request, online: false, activity: '', lastMessage: 'You are now friends' });
+      if (!request) { renderFriendsHome(); return; }
+      if (accepted) {
+        appState.friends.push({ ...request, online: request.online !== false, activity: '', lastMessage: 'You are now friends' });
+      }
       renderFriendsHome();
+      window.neighborlySocket?.emit('friend:respond', { from: request.handle, accept: accepted });
     }
 
     function cancelFriendRequest(index) {
-      appState.outgoingFriendRequests.splice(index, 1);
+      const [request] = appState.outgoingFriendRequests.splice(index, 1);
+      if (request && request.handle) window.neighborlySocket?.emit('friend:cancel', { to: request.handle });
       renderFriendsHome();
     }
 
@@ -10499,7 +10516,8 @@
 
     function mockAddFriend(handle) {
       triggerFeedback(10);
-      alert(`Friend requests for @${handle} will be available when the online service is connected.`);
+      const result = sendFriendRequestByHandle(handle);
+      showFriendToast(result.message, !result.ok);
     }
 
     /* =========================================================================
@@ -10776,6 +10794,73 @@
         window.navigator.vibrate(duration);
       }
     }
+    /* ------------------------------------------------------------------
+       Friends service — connects to the Neighborly server so verified
+       accounts can add each other. Uses the same Socket.io server that
+       powers voice/video, so one connection keeps friends in sync.
+       ------------------------------------------------------------------ */
+    function showFriendToast(message, isError = false) {
+      if (!message) return;
+      let toast = document.getElementById('friend-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'friend-toast';
+        toast.setAttribute('role', 'status');
+        toast.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9999;max-width:320px;padding:12px 16px;border-radius:12px;background:#313338;color:#f2f3f5;font-size:13px;line-height:1.45;box-shadow:0 12px 32px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .2s ease;';
+        document.body.appendChild(toast);
+      }
+      toast.textContent = message;
+      toast.style.background = isError ? '#8f2f3a' : '#313338';
+      toast.style.opacity = '1';
+      clearTimeout(toast._hideTimer);
+      toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, isError ? 6500 : 4000);
+    }
+
+    function applyFriendState(state = {}) {
+      appState.friends = (state.friends || []).map((friend) => ({
+        ...friend,
+        online: friend.online !== false,
+        activity: friend.activity || '',
+        lastMessage: friend.lastMessage || (friend.online !== false ? 'Online' : 'Offline')
+      }));
+      appState.friendRequests = state.incoming || [];
+      appState.outgoingFriendRequests = state.outgoing || [];
+      renderFriendsHome();
+    }
+
+    function initFriendsService() {
+      if (typeof window.io !== 'function') {
+        showFriendToast('Realtime features are unavailable. Reload Neighborly.', true);
+        return null;
+      }
+      const socket = window.io({ transports: ['websocket', 'polling'] });
+      window.neighborlySocket = socket;
+
+      const identity = {
+        id: savedSession?.uid || savedUser?.email || savedUser?.handle,
+        name: appState.currentUser.name,
+        handle: appState.currentUser.handle,
+        email: appState.currentUser.email,
+        initials: appState.currentUser.initials,
+        color: appState.currentUser.color,
+        avatarImage: appState.currentUser.avatarImage
+      };
+      const register = () => socket.emit('register-user', { user: identity });
+
+      socket.on('connect', register);
+      socket.on('connect_error', () => showFriendToast('Could not reach the Neighborly service. Retrying…', true));
+      socket.on('friend:state', (state) => applyFriendState(state));
+      socket.on('friend:notice', (payload = {}) => showFriendToast(payload.message));
+      socket.on('friend:error', (payload = {}) => {
+        showFriendToast(payload.message || 'Friend request failed.', true);
+        const feedback = document.getElementById('friend-add-feedback');
+        if (feedback && !document.getElementById('friend-add-page')?.hidden) feedback.textContent = payload.message || '';
+      });
+      if (socket.connected) register();
+      return socket;
+    }
+
+    initFriendsService();
   </script>
 </body>
 </html>

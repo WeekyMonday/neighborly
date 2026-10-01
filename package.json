@@ -8,7 +8,7 @@
     "start:web": "node BACKEND/server.js",
     "start:desktop": "electron .",
     "server": "node BACKEND/server.js",
-    "test": "node tests/socket-chat.test.js && node tests/voice-room.test.js"
+    "test": "node tests/socket-chat.test.js && node tests/friend-request.test.js && node tests/voice-room.test.js"
   },
   "engines": {
     "node": ">=18.0.0"

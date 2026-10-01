@@ -1,5 +1,5 @@
 // Echo PWA Service Worker
-const CACHE_NAME = 'neighborly-v17';
+const CACHE_NAME = 'neighborly-v18';
 const URLS_TO_CACHE = [
   '/',
   '/Neighborly.html',
@@ -53,6 +53,18 @@ self.addEventListener('activate', (event) => {
 
 // Fetch Event - Network first, fallback to cache
 self.addEventListener('fetch', (event) => {
+  // Never intercept non-GET, Socket.io, or API traffic.
+  if (event.request.method !== 'GET') {
+    return;
+  }
+  try {
+    const requestUrl = new URL(event.request.url);
+    if (requestUrl.pathname.startsWith('/socket.io/') || requestUrl.pathname.startsWith('/api/')) {
+      return;
+    }
+  } catch (error) {
+    return;
+  }
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
     return;

@@ -11,6 +11,52 @@ const { createRealtimeStore } = require("./socketManager");
 
 const neighborlyEntryFile = path.join(__dirname, "../FRONTEND/www/Neighborly(Update).html");
 const realtimeStore = createRealtimeStore();
+const socketsByHandle = new Map(); // normalized handle -> Set<socket>
+
+function handleKey(value) {
+  return String(value || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+function attachHandleToSocket(socket, handle) {
+  const key = handleKey(handle);
+  if (!key) return key;
+  if (socket.data.handleKey && socket.data.handleKey !== key) {
+    const previous = socketsByHandle.get(socket.data.handleKey);
+    if (previous) {
+      previous.delete(socket);
+      if (!previous.size) socketsByHandle.delete(socket.data.handleKey);
+    }
+  }
+  socket.data.handleKey = key;
+  if (!socketsByHandle.has(key)) socketsByHandle.set(key, new Set());
+  socketsByHandle.get(key).add(socket);
+  return key;
+}
+
+function socketsForHandle(handle) {
+  return socketsByHandle.get(handleKey(handle)) || null;
+}
+
+function emitToHandle(handle, event, payload) {
+  const targets = socketsForHandle(handle);
+  if (targets) targets.forEach((target) => target.emit(event, payload));
+}
+
+function broadcastFriendState(handle) {
+  const key = handleKey(handle);
+  if (!key || !socketsForHandle(key)) return;
+  emitToHandle(key, "friend:state", realtimeStore.getFriendState(key));
+}
+
+function notifyFriendsOfPresence(handle) {
+  const key = handleKey(handle);
+  if (!key) return;
+  realtimeStore.getFriends(key).forEach((friend) => {
+    if (friend && friend.handle) broadcastFriendState(friend.handle);
+  });
+}
+
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -64,17 +110,25 @@ io.on("connection", (socket) => {
 
   socket.on("register-user", (payload = {}) => {
     const user = payload.user || {};
+    const fallback = user.email ? String(user.email).split("@")[0] : "";
     const normalizedUser = {
       id: user.id || `guest-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-      name: user.name || user.email?.split("@")[0] || "Guest",
+      name: user.name || fallback || "Guest",
       email: user.email || "",
-      handle: user.handle || user.email?.split("@")[0] || "guest",
+      handle: user.handle || fallback || "guest",
+      initials: user.initials || "",
+      color: user.color || "",
+      avatarImage: user.avatarImage || null,
     };
 
     socket.user = realtimeStore.registerUser(normalizedUser);
+    attachHandleToSocket(socket, socket.user.handle);
     socket.emit("online-users", realtimeStore.getOnlineUsers());
     io.emit("presence-update", { users: realtimeStore.getOnlineUsers() });
+    socket.emit("friend:state", realtimeStore.getFriendState(socket.user.handle));
+    notifyFriendsOfPresence(socket.user.handle);
   });
+
 
   socket.on("join-channel", (payload = {}) => {
     const channel = payload.channel || "server-coffe_channel-update";
@@ -135,6 +189,73 @@ io.on("connection", (socket) => {
 
   socket.on("request-online-users", () => {
     socket.emit("online-users", realtimeStore.getOnlineUsers());
+  });
+
+  socket.on("friend:sync", () => {
+    if (socket.user?.handle) socket.emit("friend:state", realtimeStore.getFriendState(socket.user.handle));
+  });
+
+  socket.on("friend:request", (payload = {}) => {
+    const fromHandle = socket.user?.handle;
+    if (!fromHandle) {
+      socket.emit("friend:error", { message: "Reconnect to Neighborly and try again." });
+      return;
+    }
+    const result = realtimeStore.sendFriendRequest(fromHandle, payload.to || payload.handle || "");
+    if (!result.success) {
+      socket.emit("friend:error", { message: result.message || "The friend request could not be sent." });
+      return;
+    }
+    socket.emit("friend:notice", { message: result.message, autoAccepted: !!result.autoAccepted });
+    if (result.to?.handle) {
+      emitToHandle(result.to.handle, "friend:notice", {
+        message: `${result.from?.name || fromHandle} (@${result.from?.handle || fromHandle}) sent you a friend request.`,
+        kind: "request",
+      });
+    }
+    broadcastFriendState(fromHandle);
+    if (result.to?.handle) broadcastFriendState(result.to.handle);
+  });
+
+  socket.on("friend:respond", (payload = {}) => {
+    const handle = socket.user?.handle;
+    const fromHandle = payload.from || payload.handle;
+    if (!handle || !fromHandle) return;
+    const accepted = payload.accept !== false;
+    const result = accepted
+      ? realtimeStore.acceptFriendRequest(handle, fromHandle)
+      : realtimeStore.rejectFriendRequest(handle, fromHandle);
+    if (!result.success) {
+      socket.emit("friend:error", { message: "That friend request is no longer available." });
+      return;
+    }
+    socket.emit("friend:notice", { message: accepted ? "Friend request accepted." : "Friend request ignored." });
+    if (accepted && result.friend?.handle) {
+      emitToHandle(result.friend.handle, "friend:notice", {
+        message: `${socket.user?.name || handle} accepted your friend request.`,
+        kind: "accept",
+      });
+    }
+    broadcastFriendState(handle);
+    broadcastFriendState(fromHandle);
+  });
+
+  socket.on("friend:cancel", (payload = {}) => {
+    const handle = socket.user?.handle;
+    const toHandle = payload.to || payload.handle;
+    if (!handle || !toHandle) return;
+    realtimeStore.cancelFriendRequest(handle, toHandle);
+    broadcastFriendState(handle);
+    broadcastFriendState(toHandle);
+  });
+
+  socket.on("friend:remove", (payload = {}) => {
+    const handle = socket.user?.handle;
+    const otherHandle = payload.handle || payload.to;
+    if (!handle || !otherHandle) return;
+    realtimeStore.removeFriend(handle, otherHandle);
+    broadcastFriendState(handle);
+    broadcastFriendState(otherHandle);
   });
 
   socket.on("voice:join", async (payload = {}) => {
@@ -227,10 +348,23 @@ io.on("connection", (socket) => {
     if (socket.data.voiceRoom) {
       socket.to(socket.data.voiceRoom).emit("voice:peer-left", { peerId: socket.id });
     }
-    if (socket.user && socket.user.id) {
+    const handle = socket.user && socket.user.handle;
+    const hadSiblings = socket.data.handleKey
+      ? (socketsByHandle.get(socket.data.handleKey)?.size || 0) > 1
+      : false;
+    if (socket.user && socket.user.id && !hadSiblings) {
       realtimeStore.removeUser(socket.user.id);
     }
+    if (socket.data.handleKey) {
+      const targets = socketsByHandle.get(socket.data.handleKey);
+      if (targets) {
+        targets.delete(socket);
+        if (!targets.size) socketsByHandle.delete(socket.data.handleKey);
+      }
+      socket.data.handleKey = null;
+    }
     io.emit("presence-update", { users: realtimeStore.getOnlineUsers() });
+    if (handle) notifyFriendsOfPresence(handle);
   });
 });
 

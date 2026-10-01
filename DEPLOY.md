@@ -33,39 +33,54 @@ Then open <http://localhost:3001>. You should see the login page, and
 
 ---
 
-## 1b. Live preview — Cloudflare Quick Tunnel (temporary, no account needed)
+## 1b. Getting a working, shareable link
 
-The app is currently published on a public HTTPS URL with **no cloud account**,
-using a Cloudflare quick tunnel that forwards to `http://localhost:3001`:
+`npm start` / `node BACKEND/server.js` serves the whole app (frontend + realtime)
+on `http://localhost:3001`. That link is **always working** while the server runs
+and is the best one to test with on this PC.
 
-**https://cassette-star-lbs-debian.trycloudflare.com**
+> **Heads-up for this machine:** PowerShell blocks `npm.ps1`
+> (`running scripts is disabled on this system`). Run the server directly with
+> `node` instead:
+>
+> ```powershell
+> cd "C:\Users\ACER\Desktop\New folder\Neiborly.zip"
+> node BACKEND/server.js
+> ```
 
-It runs as the Windows Scheduled Task **`NeighborlyWeb`**
-(`C:\Users\ACER\AppData\Local\Temp\neighborly-deploy.cmd`), which starts the
-Node server and then `cloudflared`.
+> ⚠️ **The old public preview URLs are dead.** The previous
+> `*.trycloudflare.com` quick-tunnel link only existed while that machine + task
+> were running, and the task no longer exists here. Treat any saved
+> `trycloudflare.com` link as expired — always grab a fresh one.
 
-> ⚠️ **This URL is ephemeral.** It changes every time the task restarts, and it
-> dies if the PC sleeps, shuts down, or loses internet (a laptop lid-close is
-> enough). Re-check the current URL after any restart with:
-> `Select-String -Path "$env:TEMP\nb-tunnel.log" -Pattern 'trycloudflare' | Select-Object -Last 1`
+### Option 1 — Test locally (works right now)
 
-**Know these limits:**
+Open <http://localhost:3001> (or <http://localhost:3001/api> for the status
+JSON). `localhost` counts as a **secure context**, so the microphone, camera and
+screen-share APIs all work without HTTPS. This is the link to use for testing
+calls and screen sharing on one machine.
 
-- Your PC must stay **on and awake**. If it sleeps, shuts down, or loses
-  internet, the URL dies.
-- The URL is random and **changes** every time the task restarts.
-- You must add the domain to **Firebase → Authentication → Settings →
-  Authorized domains**, otherwise login fails with `auth/unauthorized-domain`.
+### Option 2 — Public HTTPS link
 
-Control it with:
+Two ways to get a link other people can open:
 
-```powershell
-schtasks /run    /tn NeighborlyWeb    # (re)start server + tunnel
-schtasks /end    /tn NeighborlyWeb    # stop the tunnel
-schtasks /delete /tn NeighborlyWeb /f # remove it entirely
-```
+1. **Render (permanent, recommended)** — see section 2. Gives you
+   `https://<service>.onrender.com` that survives reboots.
+2. **Cloudflare quick tunnel (temporary)** — only if `cloudflared` is installed:
 
-For a permanent URL that survives reboots and PC shutdown, use Render below.
+   ```powershell
+   node BACKEND/server.js            # terminal 1
+   cloudflared tunnel --url http://localhost:3001   # terminal 2
+   ```
+
+   `cloudflared` is **not installed** on this PC right now
+   (`where.exe cloudflared` finds nothing). Install it first, or just use
+   Render. The printed `https://<random>.trycloudflare.com` URL dies when the
+   PC sleeps or the tunnel restarts, so re-copy it each time.
+
+WebRTC calls and screen sharing need **HTTPS or localhost**. Plain
+`http://<lan-ip>` will load the UI but block camera/mic/screen-share.
+
 
 ---
 
@@ -198,11 +213,21 @@ The `*.onrender.com` subdomain keeps working alongside your custom domain.
   if you need history to survive restarts.
 - **Free tiers sleep:** Render's free web service spins down after inactivity, so
   the first visit may take ~30–60s to wake up.
-- **Voice/video:** WebRTC requires HTTPS (all the hosts above give you HTTPS).
-  Calls work between most networks via the default STUN server; a TURN server
-  may be needed for users behind strict corporate NATs/firewalls.
+- **Friends:** friend requests, friends and presence are relayed over Socket.io
+  and kept in memory (`BACKEND/socketManager.js`). Both people must have opened
+  Neighborly at least once in the current server session (in-memory store), and
+  they are matched by **@username/handle** — the handle comes from the Firebase
+  account's email prefix unless a profile was set. Adding a friend who has never
+  connected returns a friendly "could not find @…" notice.
+- **Voice/video:** WebRTC requires HTTPS (all the hosts above give you HTTPS) or
+  `localhost`. Calls work between most networks via the default STUN servers. For
+  users behind strict corporate NATs/firewalls you need a **TURN** relay — the
+  client supports it without code changes: define `window.NEIGHBORLY_ICE_SERVERS`
+  (an `iceServers` array) or `window.NEIGHBORLY_TURN_CREDENTIALS_URL` (a URL that
+  returns such an array, e.g. the Metered/Open Relay credentials API) before
+  `js/webrtcClient.js` runs.
 - **Service worker cache:** `FRONTEND/www/sw.js` caches pages. When you ship an
-  update, bump `CACHE_NAME` (currently `neighborly-v17`) so users get the new
+  update, bump `CACHE_NAME` (currently `neighborly-v18`) so users get the new
   version.
 - **`app.get("*")` fallback** serves the app for unknown paths (SPA support),
   so a bad asset path returns the HTML instead of a 404.

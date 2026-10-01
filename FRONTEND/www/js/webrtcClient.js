@@ -3,10 +3,19 @@ window.WebRTCClient = (() => {
   const remoteStreams = new Map();
   const knownPeers = new Map();
   const queuedCandidates = new Map();
+  // Public STUN is enough for most home networks. Behind strict
+  // corporate/ISP NATs a TURN relay is required; a deployer can supply one
+  // by defining window.NEIGHBORLY_ICE_SERVERS (an iceServers array) or
+  // window.NEIGHBORLY_TURN_CREDENTIALS_URL (a URL returning such an array).
+  const extraIceServers = Array.isArray(window.NEIGHBORLY_ICE_SERVERS) ? window.NEIGHBORLY_ICE_SERVERS : [];
   const rtcConfig = {
     iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
-    ]
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      ...extraIceServers
+    ],
+    iceCandidatePoolSize: 4,
+    bundlePolicy: 'max-bundle'
   };
 
   let socket = null;
@@ -18,6 +27,22 @@ window.WebRTCClient = (() => {
   let isDeafened = false;
   let callbacks = {};
   let connectPromise = null;
+  let iceServersLoaded = false;
+
+  async function loadConfiguredIceServers() {
+    if (iceServersLoaded) return;
+    iceServersLoaded = true;
+    const endpoint = typeof window.NEIGHBORLY_TURN_CREDENTIALS_URL === 'string' ? window.NEIGHBORLY_TURN_CREDENTIALS_URL : '';
+    if (!endpoint) return;
+    try {
+      const response = await fetch(endpoint, { cache: 'no-store' });
+      if (!response.ok) return;
+      const servers = await response.json();
+      if (Array.isArray(servers) && servers.length) rtcConfig.iceServers = [...rtcConfig.iceServers, ...servers];
+    } catch {
+      /* Keep the default STUN configuration if TURN credentials cannot load. */
+    }
+  }
 
   const sharePresets = {
     '480p15': { width: 854, height: 480, fps: 15, maxBitrate: 900000 },
@@ -247,6 +272,7 @@ window.WebRTCClient = (() => {
     activeChannel = nextChannel;
     localProfile = displayNameForProfile(profile);
     callbacks = options;
+    await loadConfiguredIceServers();
     const activeSocket = await waitForSocket();
     try {
       await ensureAudioInput(options.muted !== false);

@@ -1,23 +1,76 @@
+function normalizeHandle(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function buildProfile(user = {}) {
+  const rawHandle = String(
+    user.handle || (user.email ? String(user.email).split('@')[0] : '') || 'guest'
+  ).trim().replace(/^@/, '');
+  const handle = rawHandle || 'guest';
+  const name = String(user.name || handle || 'Neighborly User').trim().slice(0, 60) || 'Neighborly User';
+  const initials = String(
+    user.initials || name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('') || 'NU'
+  ).slice(0, 4) || 'NU';
+  const color = /^#[\da-f]{6}$/i.test(user.color || '') ? user.color : '#7c6ff7';
+  const avatarImage = typeof user.avatarImage === 'string' && user.avatarImage.length < 100000 ? user.avatarImage : null;
+  return {
+    id: user.id ? String(user.id) : null,
+    name,
+    handle,
+    initials,
+    color,
+    avatarImage,
+    email: user.email ? String(user.email) : '',
+  };
+}
+
 function createRealtimeStore() {
   const users = new Map();
   const messagesByChannel = new Map();
-  const friendRequests = new Map(); // { "userId": [{ from, to, status }] }
-  const friends = new Map(); // { "userId": [friendUsernames] }
+  const friendRequests = new Map(); // handle key -> [{ from, to, status, timestamp }]
+  const friends = new Map(); // handle key -> [handle key]
+  const profiles = new Map(); // handle key -> public profile
+
+  function isOnline(handleKey) {
+    for (const record of users.values()) {
+      if (record.online && normalizeHandle(record.handle) === handleKey) return true;
+    }
+    return false;
+  }
+
+  function profileFor(handleKey) {
+    const profile = profiles.get(handleKey);
+    if (!profile) return null;
+    return { ...profile, online: isOnline(handleKey) };
+  }
+
+  function rememberProfile(profile) {
+    const handleKey = normalizeHandle(profile.handle);
+    if (!handleKey) return null;
+    profiles.set(handleKey, { ...(profiles.get(handleKey) || {}), ...profile, handle: profile.handle });
+    if (!friends.has(handleKey)) friends.set(handleKey, friends.get(handleKey) || []);
+    if (!friendRequests.has(handleKey)) friendRequests.set(handleKey, friendRequests.get(handleKey) || []);
+    return handleKey;
+  }
 
   function registerUser(user) {
-    const userId = user && user.id ? String(user.id) : `guest-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const profile = buildProfile(user);
+    const id = profile.id || `guest-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const handleKey = rememberProfile({ ...profile, id });
     const record = {
-      id: userId,
-      name: user && user.name ? user.name : 'Guest',
-      email: user && user.email ? user.email : '',
-      handle: user && user.handle ? user.handle : 'guest',
+      id,
+      name: profile.name,
+      email: profile.email,
+      handle: profile.handle,
+      initials: profile.initials,
+      color: profile.color,
+      avatarImage: profile.avatarImage,
+      handleKey,
       online: true,
       lastSeen: Date.now(),
     };
 
-    users.set(userId, record);
-    if (!friends.has(userId)) friends.set(userId, []);
-    if (!friendRequests.has(userId)) friendRequests.set(userId, []);
+    users.set(id, record);
     return record;
   }
 
@@ -57,128 +110,139 @@ function createRealtimeStore() {
     return messagesByChannel.get(channel || 'general') || [];
   }
 
-  // Friend Management Functions
-  function sendFriendRequest(fromUserName, toUserName) {
-    if (fromUserName === toUserName) {
-      return { success: false, message: 'Cannot add yourself' };
-    }
+  // --- Friend management ---------------------------------------------------
+  function addFriendPair(firstKey, secondKey) {
+    const firstFriends = friends.get(firstKey) || [];
+    if (!firstFriends.includes(secondKey)) firstFriends.push(secondKey);
+    friends.set(firstKey, firstFriends);
 
-    // Find toUser
-    let toUserId = null;
-    for (const [userId, user] of users) {
-      if (user.name === toUserName) {
-        toUserId = userId;
-        break;
-      }
-    }
-
-    if (!toUserId) {
-      return { success: false, message: 'User not found' };
-    }
-
-    // Check if already friends
-    const userFriends = friends.get(toUserId) || [];
-    if (userFriends.includes(fromUserName)) {
-      return { success: false, message: 'Already friends' };
-    }
-
-    // Check for existing request
-    const toUserRequests = friendRequests.get(toUserId) || [];
-    const existingRequest = toUserRequests.find(r => r.from === fromUserName && r.status === 'pending');
-    if (existingRequest) {
-      return { success: false, message: 'Request already sent' };
-    }
-
-    // Add request
-    const request = {
-      from: fromUserName,
-      to: toUserName,
-      status: 'pending',
-      timestamp: Date.now()
-    };
-    toUserRequests.push(request);
-    friendRequests.set(toUserId, toUserRequests);
-
-    return { success: true, message: 'Friend request sent', request };
+    const secondFriends = friends.get(secondKey) || [];
+    if (!secondFriends.includes(firstKey)) secondFriends.push(firstKey);
+    friends.set(secondKey, secondFriends);
   }
 
-  function getPendingRequests(userName) {
-    let userId = null;
-    for (const [uid, user] of users) {
-      if (user.name === userName) {
-        userId = uid;
-        break;
-      }
-    }
-    if (!userId) return [];
-    return (friendRequests.get(userId) || []).filter(r => r.status === 'pending');
+  function pendingIncoming(handleKey) {
+    return (friendRequests.get(handleKey) || []).filter((request) => request.status === 'pending');
   }
 
-  function acceptFriendRequest(userName, fromUserName) {
-    let userId = null;
-    let fromUserId = null;
-
-    for (const [uid, user] of users) {
-      if (user.name === userName) userId = uid;
-      if (user.name === fromUserName) fromUserId = uid;
-    }
-
-    if (!userId || !fromUserId) return { success: false };
-
-    // Update request status
-    const toUserRequests = friendRequests.get(userId) || [];
-    const requestIdx = toUserRequests.findIndex(r => r.from === fromUserName && r.status === 'pending');
-    if (requestIdx === -1) return { success: false };
-
-    toUserRequests[requestIdx].status = 'accepted';
-
-    // Add to friends lists
-    const userFriends = friends.get(userId) || [];
-    const fromUserFriends = friends.get(fromUserId) || [];
-
-    if (!userFriends.includes(fromUserName)) userFriends.push(fromUserName);
-    if (!fromUserFriends.includes(userName)) fromUserFriends.push(userName);
-
-    friends.set(userId, userFriends);
-    friends.set(fromUserId, fromUserFriends);
-
-    return { success: true, message: 'Friend request accepted' };
+  function pendingOutgoing(handleKey) {
+    const outgoing = [];
+    friendRequests.forEach((list) => {
+      list.forEach((request) => {
+        if (request.status === 'pending' && normalizeHandle(request.from) === handleKey) outgoing.push(request);
+      });
+    });
+    return outgoing;
   }
 
-  function rejectFriendRequest(userName, fromUserName) {
-    let userId = null;
-    for (const [uid, user] of users) {
-      if (user.name === userName) {
-        userId = uid;
-        break;
-      }
+  function getFriendState(handle) {
+    const handleKey = normalizeHandle(handle);
+    const friendList = (friends.get(handleKey) || [])
+      .map((friendKey) => profileFor(friendKey))
+      .filter(Boolean)
+      .map((profile) => ({ ...profile, activity: '', lastMessage: '' }));
+    const incoming = pendingIncoming(handleKey)
+      .map((request) => {
+        const profile = profileFor(normalizeHandle(request.from));
+        return profile ? { ...profile, requestedAt: request.timestamp } : null;
+      })
+      .filter(Boolean);
+    const outgoing = pendingOutgoing(handleKey)
+      .map((request) => {
+        const profile = profileFor(normalizeHandle(request.to));
+        return profile ? { ...profile, requestedAt: request.timestamp } : null;
+      })
+      .filter(Boolean);
+    return { handle: handleKey, friends: friendList, incoming, outgoing };
+  }
+
+  function sendFriendRequest(fromHandle, toHandle) {
+    const fromKey = normalizeHandle(fromHandle);
+    const toKey = normalizeHandle(toHandle);
+    if (!fromKey || !toKey) return { success: false, message: 'Enter a valid username.' };
+    if (fromKey === toKey) return { success: false, message: 'You cannot add yourself as a friend.' };
+
+    const fromProfile = profileFor(fromKey);
+    const toProfile = profileFor(toKey);
+    if (!toProfile) {
+      return { success: false, message: `We could not find @${toHandle}. Ask them to open Neighborly once so they show up online.` };
     }
 
-    if (!userId) return { success: false };
+    if ((friends.get(fromKey) || []).includes(toKey)) {
+      return { success: false, message: `You and @${toProfile.handle} are already friends.` };
+    }
 
-    const toUserRequests = friendRequests.get(userId) || [];
-    const requestIdx = toUserRequests.findIndex(r => r.from === fromUserName && r.status === 'pending');
-    if (requestIdx === -1) return { success: false };
+    const incoming = pendingIncoming(fromKey).find((request) => normalizeHandle(request.from) === toKey);
+    if (incoming) {
+      acceptFriendRequest(fromHandle, toProfile.handle);
+      return { success: true, autoAccepted: true, message: `You and @${toProfile.handle} are now friends.`, from: fromProfile, to: toProfile };
+    }
 
-    toUserRequests.splice(requestIdx, 1);
+    if (pendingIncoming(toKey).some((request) => normalizeHandle(request.from) === fromKey)) {
+      return { success: false, message: `You already sent @${toProfile.handle} a friend request.` };
+    }
+
+    const requests = friendRequests.get(toKey) || [];
+    requests.push({ from: fromProfile.handle, to: toProfile.handle, status: 'pending', timestamp: Date.now() });
+    friendRequests.set(toKey, requests);
+    return { success: true, message: `Friend request sent to @${toProfile.handle}.`, from: fromProfile, to: toProfile };
+  }
+
+  function acceptFriendRequest(handle, fromHandle) {
+    const handleKey = normalizeHandle(handle);
+    const fromKey = normalizeHandle(fromHandle);
+    if (!handleKey || !fromKey) return { success: false };
+    const requests = friendRequests.get(handleKey) || [];
+    const request = requests.find((item) => normalizeHandle(item.from) === fromKey && item.status === 'pending');
+    if (!request) return { success: false };
+    request.status = 'accepted';
+    friendRequests.set(handleKey, requests);
+    addFriendPair(handleKey, fromKey);
+    return { success: true, friend: profileFor(fromKey) };
+  }
+
+  function rejectFriendRequest(handle, fromHandle) {
+    const handleKey = normalizeHandle(handle);
+    const fromKey = normalizeHandle(fromHandle);
+    const requests = friendRequests.get(handleKey) || [];
+    const index = requests.findIndex((item) => normalizeHandle(item.from) === fromKey && item.status === 'pending');
+    if (index === -1) return { success: false };
+    requests.splice(index, 1);
+    friendRequests.set(handleKey, requests);
     return { success: true };
   }
 
-  function getFriends(userName) {
-    let userId = null;
-    for (const [uid, user] of users) {
-      if (user.name === userName) {
-        userId = uid;
-        break;
-      }
-    }
-    if (!userId) return [];
-    return friends.get(userId) || [];
+  function cancelFriendRequest(handle, toHandle) {
+    const handleKey = normalizeHandle(handle);
+    const toKey = normalizeHandle(toHandle);
+    const requests = friendRequests.get(toKey) || [];
+    const index = requests.findIndex((item) => normalizeHandle(item.from) === handleKey && item.status === 'pending');
+    if (index === -1) return { success: false };
+    requests.splice(index, 1);
+    friendRequests.set(toKey, requests);
+    return { success: true };
+  }
+
+  function removeFriend(handle, otherHandle) {
+    const handleKey = normalizeHandle(handle);
+    const otherKey = normalizeHandle(otherHandle);
+    if (!handleKey || !otherKey) return { success: false };
+    friends.set(handleKey, (friends.get(handleKey) || []).filter((item) => item !== otherKey));
+    friends.set(otherKey, (friends.get(otherKey) || []).filter((item) => item !== handleKey));
+    return { success: true };
+  }
+
+  function getFriends(handle) {
+    const handleKey = normalizeHandle(handle);
+    return (friends.get(handleKey) || []).map((friendKey) => profileFor(friendKey)).filter(Boolean);
   }
 
   function getUserByName(userName) {
-    for (const [userId, user] of users) {
-      if (user.name === userName) return user;
+    const handleKey = normalizeHandle(userName);
+    for (const user of users.values()) {
+      if (normalizeHandle(user.handle) === handleKey || String(user.name || '').toLowerCase() === String(userName || '').toLowerCase()) {
+        return user;
+      }
     }
     return null;
   }
@@ -192,6 +256,7 @@ function createRealtimeStore() {
     messagesByChannel.clear();
     friendRequests.clear();
     friends.clear();
+    profiles.clear();
   }
 
   return {
@@ -200,10 +265,12 @@ function createRealtimeStore() {
     getOnlineUsers,
     addMessage,
     getMessages,
+    getFriendState,
     sendFriendRequest,
-    getPendingRequests,
     acceptFriendRequest,
     rejectFriendRequest,
+    cancelFriendRequest,
+    removeFriend,
     getFriends,
     getUserByName,
     getAllUsers,
@@ -213,4 +280,6 @@ function createRealtimeStore() {
 
 module.exports = {
   createRealtimeStore,
+  normalizeHandle,
+  buildProfile,
 };
