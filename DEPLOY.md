@@ -122,6 +122,43 @@ supported on all plans.
 
 ---
 
+## 2b. Custom domain (e.g. `app.neighborly.gg`)
+
+Cloudflare **quick** tunnels (`*.trycloudflare.com`) **cannot be renamed** — the
+name is randomly generated. To get a branded URL you need two things: your **own
+domain**, and a **permanent host** (a custom domain attaches to the Render
+service, not to the tunnel).
+
+1. **Register the domain.** `.gg` costs roughly **$50/year** (Spaceship ~$49.49,
+   Porkbun ~$50.80, Dynadot ~$53.50). Cheaper alternatives: `.app` / `.dev`
+   (~$12/yr) or `.com` (~$11/yr).
+2. **Deploy to Render** (see Option B).
+3. Render Dashboard → your service → **Settings → Custom Domains →
+   + Add Custom Domain** → enter `app.neighborly.gg`.
+   (Free/Hobby plans include 2 custom domains at no extra cost.)
+4. **At your domain's DNS provider**, add:
+
+   | Type  | Name  | Value                        |
+   |-------|-------|------------------------------|
+   | CNAME | `app` | `neighborly.onrender.com`    |
+
+5. Wait for Render to verify — it **automatically issues and renews free TLS**
+   and redirects all HTTP traffic to HTTPS.
+6. Add `app.neighborly.gg` to **Firebase → Authentication → Settings →
+   Authorized domains**, or login fails with `auth/unauthorized-domain`.
+
+The `*.onrender.com` subdomain keeps working alongside your custom domain.
+
+> **Free alternative:** pick a nicer service name on Render and you get
+> `https://neighborly.onrender.com` at no cost — no domain purchase or DNS
+> needed. (`render.yaml` already uses `name: neighborly`.)
+>
+> **Alternative:** Cloudflare **named** tunnels (free Cloudflare account + your
+> domain) can also serve a custom hostname from your own PC — but the site still
+> dies whenever the PC sleeps, so Render + a custom domain is the better pairing.
+
+---
+
 ## 3. Post-deploy configuration (required — do this after you get the URL)
 
 1. **Firebase → allow your new domain**
