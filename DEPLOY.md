@@ -35,6 +35,32 @@ Then open <http://localhost:3001>. You should see the login page, and
 
 ## 2. Deploy to the internet
 
+### Step 0 — Push the code to GitHub (Git is installed locally)
+
+The repo is already initialised and committed on branch `main`.
+
+1. Create an **empty** repo at <https://github.com/new>
+   (do **not** tick "Add a README", ".gitignore", or a license — this project
+   already has them).
+2. Connect and push:
+
+```powershell
+cd "C:\Users\ACER\Desktop\New folder\Neiborly.zip"
+git remote add origin https://github.com/<your-username>/<your-repo>.git
+git push -u origin main
+```
+
+The first push opens a browser window (Git Credential Manager) so you can sign
+in to GitHub. After that, ship updates with:
+
+```powershell
+git add -A && git commit -m "Update" && git push
+```
+
+> If `git` isn't recognised in your terminal, restart VS Code (Git was just
+> installed and added to PATH), or use the full path
+> `& "C:\Program Files\Git\cmd\git.exe"`.
+
 ### Option A — Railway (fastest, no Git required)
 
 ```powershell
@@ -52,9 +78,7 @@ supported on all plans.
 
 `render.yaml` is already set up as a Render Blueprint.
 
-1. Push this folder to a GitHub/GitLab repo.
-   (Git isn't installed on this PC — you can create the repo on github.com and
-   drag-and-drop the files in the browser, or install Git for Windows first.)
+1. Push this folder to a GitHub repo (see **Step 0** above).
 2. On <https://dashboard.render.com> → **New → Blueprint** → pick the repo.
 3. Render reads `render.yaml`, runs `npm install --omit=dev`, then `npm start`,
    and health-checks `/api`.
