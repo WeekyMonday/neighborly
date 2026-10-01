@@ -16,6 +16,8 @@ commit-check.txt
 state.txt
 log.txt
 smoke-result.txt
+smoke.txt
+final.txt
 
 # OS / editor cruft
 .DS_Store
