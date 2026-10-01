@@ -6501,7 +6501,7 @@
             <div class="server-invite-avatar" id="server-invite-avatar">TS</div>
             <div class="server-invite-name" id="server-invite-name">Server Name</div>
             <p class="server-invite-desc">Your Space is where you and your friends hang out. Invite people below to get started.</p>
-            <p class="server-invite-link-line">Invite Link: <a onclick="copyInviteLink()" id="invite-link-text">https://echo.gg/XXXXXXX</a></p>
+            <p class="server-invite-link-line">Invite Link: <a onclick="copyInviteLink()" id="invite-link-text">Invite link will appear here</a></p>
           </div>
         </div>
 
@@ -6849,7 +6849,7 @@
           <div class="account-row" onclick="editContactField('email')">
             <span class="account-row-label">Email</span>
             <span class="account-row-value" id="account-row-email">user@neighborly.local</span>
-            <span class="account-verification-badge" id="account-row-email-status" hidden>Verified</span>
+            <span class="account-verification-badge" id="account-row-email-status" hidden></span>
             <span class="account-desktop-edit">Edit</span>
             <svg class="account-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </div>
@@ -7298,6 +7298,73 @@
       console.warn('Theme preferences could not be loaded; using Light.', error);
     }
 
+    function buildInviteUrl(code) {
+      if (!code) return '';
+      const url = new URL('/Neighborly.html', window.location.origin);
+      url.searchParams.set('invite', code);
+      return url.toString();
+    }
+
+    async function registerServerInvite(server) {
+      const response = await fetch('/api/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.code) throw new Error(result.message || 'Could not create an invite link.');
+      return result.code;
+    }
+
+    async function joinServerFromInvite(code) {
+      if (!code) return false;
+      let invite;
+      try {
+        const response = await fetch(`/api/invites/${encodeURIComponent(code)}`, { cache: 'no-store' });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.server) throw new Error(result.message || 'This invite is invalid or has expired.');
+        invite = result.server;
+      } catch (error) {
+        alert(error.message || 'Could not check this invite link. Please try again.');
+        return false;
+      }
+
+      const existingServer = appState.servers.find((server) => server.id === invite.id);
+      if (existingServer) {
+        selectServer(existingServer.id);
+        return true;
+      }
+
+      const server = {
+        id: invite.id,
+        name: invite.name || 'Neighborly Server',
+        initials: invite.initials || (invite.name || 'NS').slice(0, 2).toUpperCase(),
+        color: invite.color || '#7c6ff7',
+        textChannels: invite.textChannels?.length ? invite.textChannels : [{ id: 'channel-general', name: 'general', category: 'GENERAL' }],
+        voiceChannels: invite.voiceChannels?.length ? invite.voiceChannels : [{ id: 'voice-general', name: 'General' }],
+        primaryChannelId: invite.primaryChannelId || invite.textChannels?.[0]?.id || 'channel-general',
+        onboarding: { invited: true, personalized: false, sentMessage: false, addedApp: false }
+      };
+
+      appState.servers.push(server);
+      renderServers();
+      selectServer(server.id);
+      return true;
+    }
+
+    function applyInviteFromUrl() {
+      const inviteCode = new URLSearchParams(window.location.search).get('invite');
+      if (!inviteCode) return;
+
+      setTimeout(async () => {
+        if (await joinServerFromInvite(inviteCode)) {
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.delete('invite');
+          window.history.replaceState({}, '', nextUrl);
+        }
+      }, 150);
+    }
+
     const appState = {
       activeWorkspace: 'dm',
       activeServerId: null,
@@ -7436,6 +7503,7 @@
       renderChannels();
       renderDesktopDMList();
       renderFriendsHome();
+      applyInviteFromUrl();
 
       // Start with a clean account workspace; users can add their own server.
       selectWorkspace('dm');
@@ -7911,12 +7979,18 @@
       return banner;
     }
 
-    function onboardingInviteFriends(serverId) {
+    async function onboardingInviteFriends(serverId) {
       triggerFeedback(10);
       const srv = appState.servers.find(s => s.id === serverId);
       if (!srv) return;
-      const randomCode = Math.random().toString(36).slice(2, 9);
-      const link = `https://echo.gg/${randomCode}`;
+      let code;
+      try {
+        code = await registerServerInvite(srv);
+      } catch (error) {
+        alert(error.message || 'Could not create an invite link.');
+        return;
+      }
+      const link = buildInviteUrl(code);
       if (navigator.clipboard) {
         navigator.clipboard.writeText(link).then(() => alert(`Invite link copied: ${link}`)).catch(() => alert(`Invite link: ${link}`));
       } else {
@@ -9110,7 +9184,7 @@
       toggleWizardClearBtn();
     }
 
-    function finishServerWizard() {
+    async function finishServerWizard() {
       const input = document.getElementById('wizard-input-server-name');
       const finalName = input ? input.value.trim() : '';
       if (!finalName) return;
@@ -9179,12 +9253,18 @@
         onboarding: { invited: false, personalized: false, sentMessage: false, addedApp: false }
       };
 
-      appState.servers.push(newServerObj);
+      let inviteCode;
+      try {
+        inviteCode = await registerServerInvite(newServerObj);
+      } catch (error) {
+        alert(error.message || 'Could not create an invite link. Please try again.');
+        return;
+      }
 
+      appState.servers.push(newServerObj);
       appState.wizard.pendingServerId = generatedServerId;
-      const randomCode = Math.random().toString(36).slice(2, 9);
       const inviteLinkEl = document.getElementById('invite-link-text');
-      if (inviteLinkEl) inviteLinkEl.textContent = `https://echo.gg/${randomCode}`;
+      if (inviteLinkEl) inviteLinkEl.textContent = buildInviteUrl(inviteCode);
 
       const bannerEl = document.getElementById('server-invite-banner');
       if (bannerEl) bannerEl.style.background = `linear-gradient(160deg, ${newServerObj.color} 0%, #1a1030 75%)`;
@@ -9243,13 +9323,22 @@
       alert('Invite link settings (expiry, max uses) would open here once a real backend is connected.');
     }
 
-    function triggerJoinMock() {
+    async function triggerJoinMock() {
       triggerFeedback(10);
-      const code = prompt("Enter Server Invitation link:", "discord.gg/testing-lounge");
-      if (code) {
-        alert(`Invitation request submitted for: "${code}"`);
-        closeCreateServerModal();
+      const defaultValue = new URL('/Neighborly.html', window.location.origin);
+      defaultValue.searchParams.set('invite', 'example-code');
+      const code = prompt("Enter Server Invitation link:", defaultValue.toString());
+      if (!code) return;
+
+      let inviteCode = String(code).trim();
+      try {
+        const url = new URL(code, window.location.origin);
+        inviteCode = url.searchParams.get('invite') || inviteCode;
+      } catch (error) {
+        console.warn('Could not parse invite link.', error);
       }
+
+      if (await joinServerFromInvite(inviteCode)) closeCreateServerModal();
     }
 
     /* =========================================================================
@@ -9868,7 +9957,11 @@
       const emailEl = document.getElementById('account-row-email');
       if (emailEl) emailEl.textContent = u.email;
       const emailStatusEl = document.getElementById('account-row-email-status');
-      if (emailStatusEl) emailStatusEl.hidden = !savedSession?.emailVerified;
+      if (emailStatusEl) {
+        emailStatusEl.textContent = savedSession?.emailVerified ? 'Verified' : 'Pending';
+        emailStatusEl.hidden = !u.email;
+        emailStatusEl.setAttribute('aria-label', savedSession?.emailVerified ? 'Email verified' : 'Email verification pending');
+      }
 
       const phoneEl = document.getElementById('account-row-phone');
       if (phoneEl) phoneEl.textContent = u.phone || '';

@@ -59,6 +59,7 @@
   .field-error-text.show { display: block; }
   .field-hint { margin-top: 6px; color: var(--slate); font-size: 11px; line-height: 1.45; }
   .phone-input-row { display: flex; gap: 10px; align-items: stretch; }
+  .phone-region-search { margin-bottom: 8px; }
   .phone-country-select { flex: 0 0 auto; width: 46%; max-width: 200px; padding: 0 10px; cursor: pointer; }
   .phone-input-row #phone { flex: 1 1 auto; width: auto; min-width: 0; }
   .phone-country-select.has-error { border-color: var(--danger); }
@@ -113,6 +114,7 @@
 
       <div class="field-group">
         <label class="field-label" for="phone">Phone number</label>
+        <input class="field-input phone-region-search" type="search" id="phone-country-search" placeholder="Search country or calling code" autocomplete="off" aria-label="Search country or calling code">
         <div class="phone-input-row">
           <select class="field-input phone-country-select" id="phone-country" aria-label="Country calling code">
             <option value="" selected>Country</option>
@@ -336,8 +338,8 @@
     </form>
 
     <div class="verification-notice" id="verification-notice" role="status" hidden>
-      <h2>Verify your email</h2>
-      <p id="verification-notice-text">We sent a verification link to your email address. Open it to verify your account, then log in.</p>
+      <h2>Account created</h2>
+      <p id="verification-notice-text">Your account is ready. Email verification is pending, but you can log in now.</p>
       <a href="login.html">Go to login</a>
     </div>
 
@@ -361,6 +363,21 @@
     const banner = document.getElementById('form-banner');
     const bannerText = document.getElementById('form-banner-text');
     const phoneCountrySelect = document.getElementById('phone-country');
+    const phoneCountrySearch = document.getElementById('phone-country-search');
+    const phoneCountryOptions = Array.from(phoneCountrySelect.options).slice(1).map((option) => option.cloneNode(true));
+
+    phoneCountrySearch.addEventListener('input', () => {
+      const query = phoneCountrySearch.value.trim().toLowerCase();
+      const matchingOptions = phoneCountryOptions.filter((option) =>
+        option.textContent.toLowerCase().includes(query) || option.value.includes(query)
+      );
+      phoneCountrySelect.replaceChildren(new Option('Country', '', true, true), ...matchingOptions);
+      if (!matchingOptions.length) {
+        phoneCountrySelect.add(new Option('No regions found', '', false, false));
+        phoneCountrySelect.options[1].disabled = true;
+      }
+      phoneCountrySelect.value = '';
+    });
 
     function setFieldError(id, show) {
       const input = document.getElementById(id);
@@ -427,11 +444,12 @@
         await window.neighborlyAuth.signOut();
         document.getElementById('verification-notice').hidden = false;
         form.hidden = true;
-        document.querySelector('.auth-desc').textContent = `A verification link was sent to ${email}. Verify your email, then log in to continue.`;
+        document.getElementById('verification-notice-text').textContent = `Your account is ready. We sent an optional verification link to ${email}; you can log in now even if you have not used it.`;
+        document.querySelector('.auth-desc').textContent = 'Your account is ready. You can sign in now; email verification can be completed later.';
       } catch (error) {
         if (accountCreated) {
           await window.neighborlyAuth.signOut().catch(() => {});
-          document.getElementById('verification-notice-text').textContent = 'Your account was created, but we could not send the verification email right now. Log in to request another verification email.';
+          document.getElementById('verification-notice-text').textContent = 'Your account is ready, but the optional verification email could not be sent. You can log in now.';
           document.getElementById('verification-notice').hidden = false;
           form.hidden = true;
           return;
@@ -439,7 +457,9 @@
         shakeElement(document.querySelector('.auth-card'));
         submitBtn.disabled = false;
         submitBtn.textContent = 'Create account';
-        bannerText.textContent = error.message || 'Something went wrong. Try again.';
+        bannerText.textContent = error.code === 'auth/email-already-in-use'
+          ? 'An account already uses this email. Log in instead, or reset its password if you cannot access it.'
+          : error.message || 'Something went wrong. Try again.';
         banner.classList.add('show');
       }
     });

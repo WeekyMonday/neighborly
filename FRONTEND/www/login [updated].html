@@ -315,30 +315,12 @@
         const credential = await window.neighborlyAuth.signInWithEmailAndPassword(email, password);
         const user = credential.user;
         await user.reload();
-        if (!user.emailVerified) {
-          let verificationSent = false;
-          try {
-            await user.sendEmailVerification();
-            verificationSent = true;
-          } catch (verificationError) {
-            console.warn('Could not resend email verification:', verificationError);
-          }
-          await window.neighborlyAuth.signOut();
-          submitBtn.classList.remove('loading');
-          submitBtn.disabled = false;
-          bannerText.textContent = verificationSent
-            ? `Your email is not verified yet. We sent another verification link to ${email}. Open it, then log in again.`
-            : `Your email is not verified yet. Please try logging in again later to resend the verification link.`;
-          banner.classList.add('show');
-          return;
-        }
-
         const savedProfile = JSON.parse(localStorage.getItem(`neighborly_profile_${user.uid}`) || 'null');
         const displayName = user.displayName || savedProfile?.name || user.email || email;
         localStorage.setItem('neighborly_session', JSON.stringify({
           uid: user.uid,
           email: user.email || email,
-          emailVerified: true,
+          emailVerified: !!user.emailVerified,
           name: displayName,
           handle: savedProfile?.handle || (user.email || email).split('@')[0],
           phone: savedProfile?.phone || ''

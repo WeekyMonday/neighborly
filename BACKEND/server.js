@@ -3,14 +3,17 @@ const cors = require("cors");
 const path = require("path");
 const http = require("http");
 const { Server } = require("socket.io");
+const crypto = require("crypto");
 require("dotenv").config();
 
 const app = express();
 const authRoutes = require("./routes/auth");
 const { createRealtimeStore } = require("./socketManager");
+const { createServerInviteToken, verifyServerInviteToken } = require("./inviteTokens");
 
 const neighborlyEntryFile = path.join(__dirname, "../FRONTEND/www/Neighborly(Update).html");
 const realtimeStore = createRealtimeStore();
+const inviteSecret = process.env.INVITE_SECRET || process.env.JWT_SECRET || crypto.randomBytes(32).toString("hex");
 const socketsByHandle = new Map(); // normalized handle -> Set<socket>
 
 function handleKey(value) {
@@ -91,6 +94,29 @@ app.get("/api", (req, res) => {
     realtime: "socket.io active",
     users: realtimeStore.getOnlineUsers(),
   });
+});
+
+app.get("/api/config", (req, res) => {
+  const protocol = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol;
+  const host = req.get("x-forwarded-host") || req.get("host") || "localhost:3001";
+  const appUrl = (process.env.APP_URL || process.env.PUBLIC_URL || `${protocol}://${host}`).replace(/\/+$/, "");
+  res.json({
+    appUrl,
+    appName: "Neighborly",
+    environment: process.env.NODE_ENV || "development",
+  });
+});
+
+app.post("/api/invites", (req, res) => {
+  const code = createServerInviteToken(req.body?.server, inviteSecret);
+  if (!code) return res.status(400).json({ message: "A valid server is required to create an invite." });
+  res.status(201).json({ code });
+});
+
+app.get("/api/invites/:code", (req, res) => {
+  const serverDetails = verifyServerInviteToken(req.params.code, inviteSecret);
+  if (!serverDetails) return res.status(404).json({ message: "This invite is invalid or has expired." });
+  res.set("Cache-Control", "no-store").json({ server: serverDetails });
 });
 
 app.get("/api/users", (req, res) => {
