@@ -86,19 +86,50 @@ WebRTC calls and screen sharing need **HTTPS or localhost**. Plain
 
 ## 2. Deploy to the internet
 
-### Step 0 — GitHub ✅ DONE
+### Step 0 — GitHub ✅ DONE, and now fully automatic ✅
 
-The code is committed on branch `main` and pushed to:
+The code lives on branch `main` at:
 
 **<https://github.com/WeekyMonday/neighborly>** (public)
 
-To ship future updates:
+Render is connected to that branch with `autoDeployTrigger: commit`
+(see `render.yaml`), so **every push to `main` goes live on its own.** There is
+no manual deploy button to press, and no need to say "deploy" — just commit.
+
+#### Ship an update
 
 ```powershell
 cd "C:\Users\ACER\Desktop\New folder\Neiborly.zip"
-git add -A
-git commit -m "Update"
-git push
+npm run ship                       # stage + bump PWA cache + commit + push
+npm run ship "Fix login redirect"  # ...with your own message
+```
+
+That single command:
+
+1. stages everything (`git add -A`),
+2. bumps `CACHE_NAME` in `FRONTEND/www/sw.js` if any frontend file changed,
+   so returning users aren't stuck on a stale cached build,
+3. commits,
+4. pushes to `origin/main` → Render builds and redeploys automatically.
+
+You only have to remember **`npm run ship`** — not "deploy".
+
+#### Why a plain `git commit` is enough too
+
+`npm run setup` installs a `post-commit` hook in `.git/hooks` that pushes for
+you, so even a hand-typed `git commit` updates the live site. (`npm run ship`
+runs this setup first, which is why fresh clones work immediately.) The hook is
+deliberately conservative:
+
+- skips when `NEIGHBORLY_NO_AUTOPUSH=1` is set (WIP commits),
+- skips during rebase / merge / cherry-pick,
+- only runs on `main`,
+- never fails your commit if the network or credentials are unavailable.
+
+#### Seeing what would happen
+
+```powershell
+node scripts/ship.js --dry-run
 ```
 
 > `git` may not be on PATH until you restart VS Code. Until then, use the full
@@ -226,9 +257,9 @@ The `*.onrender.com` subdomain keeps working alongside your custom domain.
   (an `iceServers` array) or `window.NEIGHBORLY_TURN_CREDENTIALS_URL` (a URL that
   returns such an array, e.g. the Metered/Open Relay credentials API) before
   `js/webrtcClient.js` runs.
-- **Service worker cache:** `FRONTEND/www/sw.js` caches pages. When you ship an
-  update, bump `CACHE_NAME` (currently `neighborly-v18`) so users get the new
-  version.
+- **Service worker cache:** `FRONTEND/www/sw.js` precaches pages and assets under
+  `CACHE_NAME` (`neighborly-vNN`). `npm run ship` bumps it automatically when
+  frontend files change, so **you never have to edit it by hand** — just ship.
 - **`app.get("*")` fallback** serves the app for unknown paths (SPA support),
   so a bad asset path returns the HTML instead of a 404.
 

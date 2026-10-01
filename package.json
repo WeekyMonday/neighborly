@@ -8,6 +8,9 @@
     "start:web": "node BACKEND/server.js",
     "start:desktop": "electron .",
     "server": "node BACKEND/server.js",
+    "ship": "node scripts/setup-hooks.js && node scripts/ship.js",
+    "deploy": "node scripts/setup-hooks.js && node scripts/ship.js",
+    "setup": "node scripts/setup-hooks.js",
     "test": "node tests/socket-chat.test.js && node tests/friend-request.test.js && node tests/voice-room.test.js && node tests/invite-links.test.js"
   },
   "engines": {

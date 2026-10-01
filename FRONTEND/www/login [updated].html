@@ -288,9 +288,21 @@
     position: relative; isolation: isolate; min-width: 0; min-height: calc(100vh - 28px);
     margin: 14px 14px 14px 0; overflow: hidden; border-radius: 12px; background: #c5d8d2;
   }
-  .login-visual img {
-    position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; object-position: center;
-    animation: login-image-arrive 900ms var(--login-ease) both;
+  .visual-stage {
+    position: absolute; inset: 0; z-index: -2;
+    overflow: hidden;
+  }
+  .visual-slide {
+    position: absolute; inset: 0;
+    opacity: 0;
+    transform: translateX(26px) scale(1.04);
+    filter: saturate(0.9) contrast(1.02);
+    animation: login-soft-slide 14s ease-in-out infinite;
+  }
+  .visual-slide:nth-child(2) { animation-delay: 4.5s; }
+  .visual-slide:nth-child(3) { animation-delay: 9s; }
+  .visual-slide img {
+    width: 100%; height: 100%; object-fit: cover; object-position: center;
   }
   .visual-scrim { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(13,28,24,.04) 35%, rgba(13,28,24,.76) 100%); }
   .visual-topline { position: absolute; top: 27px; left: 29px; right: 29px; display: flex; justify-content: space-between; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 1.1px; text-shadow: 0 1px 12px rgba(0,0,0,.16); }
@@ -300,7 +312,12 @@
   .visual-copy h2 { max-width: 570px; font-family: 'Fraunces', Georgia, serif; font-size: 42px; font-weight: 600; line-height: 1.12; }
   .visual-copy span { color: #ffd0a8; }
   @keyframes login-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes login-image-arrive { from { opacity: .6; transform: scale(1.025); } to { opacity: 1; transform: scale(1); } }
+  @keyframes login-soft-slide {
+    0%, 18% { opacity: 0; transform: translateX(28px) scale(1.06); }
+    22%, 38% { opacity: 1; transform: translateX(0) scale(1.02); }
+    42%, 62% { opacity: 1; transform: translateX(0) scale(1); }
+    72%, 100% { opacity: 0; transform: translateX(-28px) scale(1.06); }
+  }
   @media (max-width: 900px) {
     .login-shell { grid-template-columns: minmax(390px, .92fr) minmax(0, 1.08fr); }
     .login-panel { padding-right: 38px; padding-left: 38px; }
@@ -327,8 +344,6 @@
 </style>
 </head>
 <body>
-  <script src="js/neighborly-loader.js"></script>
-
   <main class="login-shell">
     <section class="auth-card login-panel" aria-labelledby="login-heading">
       <a class="login-brand" href="/" aria-label="Neighborly home">
@@ -383,7 +398,17 @@
     </section>
 
     <aside class="login-visual" aria-label="Neighborly community">
-      <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&amp;fit=crop&amp;w=1800&amp;q=85" alt="Students sharing ideas around a laptop" fetchpriority="high">
+      <div class="visual-stage" aria-hidden="true">
+        <div class="visual-slide">
+          <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1800&q=85" alt="Students sharing ideas around a laptop">
+        </div>
+        <div class="visual-slide">
+          <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1800&q=85" alt="Community members collaborating together">
+        </div>
+        <div class="visual-slide">
+          <img src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1800&q=85" alt="Friends working and talking together">
+        </div>
+      </div>
       <div class="visual-scrim" aria-hidden="true"></div>
       <div class="visual-topline"><span>NEIGHBORLY / COMMUNITY</span><span class="visual-index">01 — 03</span></div>
       <div class="visual-copy">
@@ -461,6 +486,11 @@
           phone: savedProfile?.phone || ''
         }));
 
+        try {
+          sessionStorage.setItem('neighborly_login_transition', '1');
+        } catch (storageError) {
+          console.warn('Login transition preference could not be saved.', storageError);
+        }
         window.location.href = 'Neighborly.html';
       } catch (error) {
         shakeElement(document.querySelector('.auth-card'));

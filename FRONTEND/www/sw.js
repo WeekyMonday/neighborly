@@ -1,5 +1,5 @@
 // Echo PWA Service Worker
-const CACHE_NAME = 'neighborly-v19';
+const CACHE_NAME = 'neighborly-v20';
 const URLS_TO_CACHE = [
   '/',
   '/Neighborly.html',
