@@ -6,6 +6,8 @@ services:
     runtime: node
     plan: free
     region: singapore
+    branch: main
+    autoDeployTrigger: commit
     buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /api
