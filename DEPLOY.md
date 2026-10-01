@@ -33,6 +33,37 @@ Then open <http://localhost:3001>. You should see the login page, and
 
 ---
 
+## 1b. Live preview — Cloudflare Quick Tunnel (temporary, no account needed)
+
+The app is currently published on a public HTTPS URL with **no cloud account**,
+using a Cloudflare quick tunnel that forwards to `http://localhost:3001`:
+
+**https://charger-thanksgiving-would-beautifully.trycloudflare.com**
+
+It runs as the Windows Scheduled Task **`NeighborlyWeb`**
+(`C:\Users\ACER\AppData\Local\Temp\neighborly-deploy.cmd`), which starts the
+Node server and then `cloudflared`.
+
+**Know these limits:**
+
+- Your PC must stay **on and awake**. If it sleeps, shuts down, or loses
+  internet, the URL dies.
+- The URL is random and **changes** every time the task restarts.
+- You must add the domain to **Firebase → Authentication → Settings →
+  Authorized domains**, otherwise login fails with `auth/unauthorized-domain`.
+
+Control it with:
+
+```powershell
+schtasks /run    /tn NeighborlyWeb    # (re)start server + tunnel
+schtasks /end    /tn NeighborlyWeb    # stop the tunnel
+schtasks /delete /tn NeighborlyWeb /f # remove it entirely
+```
+
+For a permanent URL that survives reboots and PC shutdown, use Render below.
+
+---
+
 ## 2. Deploy to the internet
 
 ### Step 0 — GitHub ✅ DONE
