@@ -7986,6 +7986,7 @@
             : '';
           const media = hasMedia ? renderAttachmentHtml(message.attachment, message.id) : '';
           const reactions = renderDirectReactionChips(message);
+          const embed = renderEmbedSlot(firstLinkIn(body));
           const textHtml = body
             ? `<div class="dm-bubble">${linkifyMessageText(escapeFriendsText(body))}</div>`
             : '';
@@ -7994,6 +7995,7 @@
             ${reply}
             ${media}
             ${textHtml}
+            ${embed}
             ${reactions}
             <time class="dm-message-time">${formatDmTime(message.createdAt)}</time>
             <div class="dm-message-actions">
@@ -8011,6 +8013,7 @@
         })
         .join('') || `<p class="dm-empty-state">No messages yet — say hello.</p>`;
       list.scrollTop = list.scrollHeight;
+      hydrateLinkEmbeds(list);
     }
 
     /* ---- Reactions ------------------------------------------------------------
@@ -8102,6 +8105,76 @@
     }
 
     /** Turns URL text into links, shared with the reply/delete actions. */
+    /* === Link embeds ===========================================================
+   Any message containing a link gets a preview card. The page is fetched
+   server-side (sites don't send CORS headers) and cached there for hours, so
+   this costs one request per distinct link per browser.                       */
+
+    const linkPreviewCache = new Map(); // url -> preview | null
+    const linkPreviewPending = new Set();
+
+    /** Returns the first http(s) link in a message body. */
+    function firstLinkIn(text) {
+      const match = String(text || '').match(/https?:\/\/[^\s<>"']+/i);
+      return match ? match[0] : null;
+    }
+
+    function renderEmbedCard(preview) {
+      if (!preview) return '';
+      const image = preview.image
+        ? `<a class="link-embed-image" href="${escapeFriendsText(preview.url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeFriendsText(preview.image)}" alt="" loading="lazy"></a>`
+        : '';
+      return `
+        <div class="link-embed">
+          ${image}
+          <div class="link-embed-body">
+            ${preview.siteName ? `<span class="link-embed-site">${escapeFriendsText(preview.siteName)}</span>` : ''}
+            <a class="link-embed-title" href="${escapeFriendsText(preview.url)}" target="_blank" rel="noopener noreferrer">${escapeFriendsText(preview.title || preview.url)}</a>
+            ${preview.description ? `<p class="link-embed-desc">${escapeFriendsText(preview.description)}</p>` : ''}
+            <a class="link-embed-url" href="${escapeFriendsText(preview.url)}" target="_blank" rel="noopener noreferrer">${escapeFriendsText(preview.url)}</a>
+          </div>
+        </div>`;
+    }
+
+    /** Placeholder that the async pass below fills in. */
+    function renderEmbedSlot(url) {
+      if (!url) return '';
+      const cached = linkPreviewCache.get(url);
+      if (cached === undefined) return `<div class="link-embed link-embed-loading" data-embed-url="${escapeFriendsText(url)}"></div>`;
+      if (!cached) return '';
+      return renderEmbedCard(cached);
+    }
+
+    /** Fills any embed placeholders currently on screen. */
+    function hydrateLinkEmbeds(root = document) {
+      root.querySelectorAll('.link-embed-loading[data-embed-url]').forEach((slot) => {
+        const url = slot.getAttribute('data-embed-url');
+        if (!url || linkPreviewPending.has(url)) return;
+
+        if (linkPreviewCache.has(url)) {
+          const html = renderEmbedCard(linkPreviewCache.get(url));
+          if (html) slot.outerHTML = html;
+          else slot.remove();
+          return;
+        }
+
+        linkPreviewPending.add(url);
+        fetch(`/api/link-preview?url=${encodeURIComponent(url)}`)
+          .then((response) => response.json())
+          .then((data) => {
+            linkPreviewCache.set(url, data.preview || null);
+            const current = document.querySelector(`[data-embed-url="${CSS.escape(url)}"]`);
+            if (!current) return;
+            const html = renderEmbedCard(data.preview);
+            if (html) current.outerHTML = html;
+            else current.remove();
+          })
+          .catch(() => linkPreviewCache.set(url, null))
+          .finally(() => linkPreviewPending.delete(url));
+      });
+    }
+
+    /** Turns URLs in message text into clickable links. */
     function linkifyMessageText(text) {
       return String(text).replace(
         /(https?:\/\/[^\s<]+)/g,
@@ -8790,6 +8863,7 @@
             <div class="message-content-box">
               ${msg.text ? `<p class="message-text-body">${msg.text}</p>` : ''}
               ${msg.attachment ? renderAttachmentHtml(msg.attachment, msg.id) : ''}
+              ${renderEmbedSlot(firstLinkIn(msg.text))}
             </div>
             ${toolbarAndMenuHtml}
           `;
@@ -8808,6 +8882,7 @@
               </div>
               ${msg.text ? `<p class="message-text-body">${msg.text}</p>` : ''}
               ${msg.attachment ? renderAttachmentHtml(msg.attachment, msg.id) : ''}
+              ${renderEmbedSlot(firstLinkIn(msg.text))}
             </div>
             ${toolbarAndMenuHtml}
           `;
@@ -8825,6 +8900,9 @@
           container.appendChild(reactionsEl.firstElementChild);
         }
       });
+
+      // Fill in any link previews now that the rows are in the DOM.
+      hydrateLinkEmbeds(container);
 
       // Maintain viewport focus
       container.scrollTop = container.scrollHeight;
@@ -8979,25 +9057,63 @@
       return banner;
     }
 
-    async function onboardingInviteFriends(serverId) {
-      triggerFeedback(10);
-      const srv = appState.servers.find(s => s.id === serverId);
-      if (!srv) return;
-      let code;
+    /** Builds (and copies) an invite link for any server, then opens it. */
+    async function copyServerInviteLink(serverId) {
+      triggerFeedback(8);
+      const srv = appState.servers.find((server) => server.id === serverId);
+      if (!srv) {
+        alert('That server is no longer available.');
+        return;
+      }
+
+      let link;
       try {
-        code = await registerServerInvite(srv);
+        link = buildInviteUrl(await registerServerInvite(srv));
       } catch (error) {
         alert(error.message || 'Could not create an invite link.');
         return;
       }
-      const link = buildInviteUrl(code);
+
+      let copied = false;
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(link).then(() => alert(`Invite link copied: ${link}`)).catch(() => alert(`Invite link: ${link}`));
-      } else {
-        alert(`Invite link: ${link}`);
+        try {
+          await navigator.clipboard.writeText(link);
+          copied = true;
+        } catch { /* fall through to showing the link */ }
       }
-      srv.onboarding.invited = true;
-      renderMessages();
+      showInviteLinkDialog(srv, link, copied);
+    }
+
+    function showInviteLinkDialog(srv, link, copied) {
+      const existing = document.getElementById('server-invite-dialog');
+      if (existing) existing.remove();
+
+      const dialog = document.createElement('div');
+      dialog.id = 'server-invite-dialog';
+      dialog.className = 'server-invite-dialog';
+      dialog.innerHTML = `
+        <div class="server-invite-dialog-card">
+          <h3>Invite to ${escapeFriendsText(srv.name)}</h3>
+          <p>${copied ? 'Copied to your clipboard — send it to whoever you want.' : 'Copy this link and send it to whoever you want.'}</p>
+          <input class="server-invite-dialog-input" value="${escapeFriendsText(link)}" readonly onclick="this.select()">
+          <div class="server-invite-dialog-actions">
+            <button onclick="copyServerInviteLink('${escapeFriendsText(String(srv.id))}')">Create a new link</button>
+            <button class="primary" onclick="document.getElementById('server-invite-dialog').remove()">Done</button>
+          </div>
+        </div>`;
+      document.body.appendChild(dialog);
+      const input = dialog.querySelector('.server-invite-dialog-input');
+      if (input) input.focus();
+    }
+
+    function closeServerInviteDialog() {
+      document.getElementById('server-invite-dialog')?.remove();
+    }
+
+    function onboardingInviteFriends(serverId) {
+      copyServerInviteLink(serverId);
+      const srv = appState.servers.find(s => s.id === serverId);
+      if (srv && srv.onboarding) srv.onboarding.invited = true;
     }
 
     function onboardingPersonalizeIcon(serverId) {

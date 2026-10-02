@@ -1214,3 +1214,118 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
   cursor: pointer;
 }
 .dm-reaction-option:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.15); }
+/* === Link embeds ========================================================= */
+.link-embed {
+  display: flex;
+  flex-direction: column;
+  max-width: 420px;
+  margin-top: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--discord-accent, #5865f2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.link-embed-loading { min-height: 46px; }
+.link-embed-image img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+.link-embed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.link-embed-site {
+  color: #949ba4;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.link-embed-title {
+  color: #00a8fc;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.link-embed-title:hover { text-decoration: underline; }
+.link-embed-desc {
+  margin: 0;
+  color: #b5bac1;
+  font-size: 13px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.link-embed-url {
+  color: #949ba4;
+  font-size: 11px;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-embed-url:hover { text-decoration: underline; }
+
+/* === Server invite dialog ================================================= */
+.server-invite-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 20px;
+}
+.server-invite-dialog-card {
+  width: 100%;
+  max-width: 480px;
+  padding: 22px;
+  border-radius: 12px;
+  background: #2b2d31;
+  border: 1px solid #1e1f22;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  color: #dbdee1;
+}
+.server-invite-dialog-card h3 { margin: 0 0 8px; font-size: 18px; }
+.server-invite-dialog-card p { margin: 0 0 14px; color: #949ba4; font-size: 13px; }
+.server-invite-dialog-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #1e1f22;
+  background: #1e1f22;
+  color: #dbdee1;
+  font: inherit;
+  font-size: 12px;
+}
+.server-invite-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.server-invite-dialog-actions button {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #dbdee1;
+  background: #404249;
+}
+.server-invite-dialog-actions button.primary { color: #fff; background: #5865f2; }
+.server-invite-dialog-actions button:hover { filter: brightness(1.08); }

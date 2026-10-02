@@ -11,6 +11,7 @@ const authRoutes = require("./routes/auth");
 const { createRealtimeStore } = require("./socketManager");
 const { createPersistence } = require("./config/persistence");
 const { createServerInviteToken, verifyServerInviteToken } = require("./inviteTokens");
+const { getLinkPreview } = require("./linkPreview");
 
 const neighborlyEntryFile = path.join(__dirname, "../FRONTEND/www/Neighborly(Update).html");
 
@@ -135,6 +136,20 @@ app.get("/api/invites/:code", (req, res) => {
   const serverDetails = verifyServerInviteToken(req.params.code, inviteSecret);
   if (!serverDetails) return res.status(404).json({ message: "This invite is invalid or has expired." });
   res.set("Cache-Control", "no-store").json({ server: serverDetails });
+});
+
+app.get("/api/link-preview", async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ message: "A url is required." });
+  res.set("Cache-Control", "public, max-age=3600");
+  try {
+    const preview = await getLinkPreview(url);
+    // No preview is a normal outcome (non-HTML page, dead link, blocked
+    // address) rather than an error.
+    res.json({ preview: preview || null });
+  } catch (error) {
+    res.status(200).json({ preview: null, reason: error.message });
+  }
 });
 
 app.get("/api/users", (req, res) => {
