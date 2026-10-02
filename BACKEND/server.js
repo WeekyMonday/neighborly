@@ -293,6 +293,8 @@ io.on("connection", (socket) => {
     socket.join(room);
 
     const history = await realtimeStore.getDmMessages(guard.fromHandle, guard.toHandle, 100);
+    // Prime the reaction cache so existing reactions can still be toggled.
+    realtimeStore.hydrateReactions(room, history);
     // Hand back anything that arrived since the client last opened this chat,
     // so a conversation picked up later is never missing its tail.
     socket.emit("dm:history", {
@@ -345,6 +347,32 @@ io.on("connection", (socket) => {
 
     // Room-only emit: never io.emit, so this stays private to the pair.
     io.to(room).emit("dm:message", message);
+  });
+
+  socket.on("dm:react", (payload = {}) => {
+    const guard = dmGuard(socket, payload);
+    if (!guard) return;
+
+    const messageId = String(payload.messageId || "");
+    const emoji = String(payload.emoji || "").slice(0, 8);
+    if (!messageId || !emoji) return;
+
+    const room = ensureDmRoom(guard.fromHandle, guard.toHandle);
+    const result = realtimeStore.toggleDmReaction({
+      from: guard.fromHandle,
+      to: guard.toHandle,
+      messageId,
+      emoji,
+    });
+
+    // Room-only, like every other DM event.
+    io.to(room).emit("dm:reaction", {
+      conversationKey: room,
+      messageId,
+      emoji,
+      tally: result.tally,
+      reacted: result.reacted,
+    });
   });
 
   socket.on("dm:delete", (payload = {}) => {

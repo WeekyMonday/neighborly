@@ -239,6 +239,67 @@ function createRealtimeStore(persistence) {
     return [normalizeHandle(handleA), normalizeHandle(handleB)].sort().join(':');
   }
 
+  // --- Message reactions ------------------------------------------------------
+// Keyed "<conversationKey>|<messageId>" -> { emoji -> [handles] }. Populated
+// whenever a conversation is opened or a message is sent, then written back
+// to the store so reactions survive a restart.
+
+  const reactionsCache = new Map();
+
+  function reactionKey(conversationKey, messageId) {
+    return `${conversationKey}|${messageId}`;
+  }
+
+  function hydrateReactions(conversationKey, messages = []) {
+    for (const message of messages) {
+      if (!message || !message.id || !message.reactions) continue;
+      const entry = {};
+      for (const [emoji, handles] of Object.entries(message.reactions)) {
+        entry[emoji] = Array.isArray(handles) ? handles.slice() : [];
+      }
+      reactionsCache.set(reactionKey(conversationKey, message.id), entry);
+    }
+  }
+
+  function reactionsFor(conversationKey, messageId) {
+    const key = reactionKey(conversationKey, messageId);
+    if (!reactionsCache.has(key)) reactionsCache.set(key, {});
+    return reactionsCache.get(key);
+  }
+
+  /** Adds or removes one person's reaction. Returns the new tally. */
+  function toggleDmReaction({ from, to, messageId, emoji }) {
+    const senderKey = normalizeHandle(from);
+    const conversation = dmRoomKey(from, to);
+    const entry = reactionsFor(conversation, messageId);
+    const held = entry[emoji] || [];
+    const index = held.indexOf(senderKey);
+
+    if (index === -1) held.push(senderKey);
+    else held.splice(index, 1);
+
+    if (held.length) entry[emoji] = held;
+    else delete entry[emoji];
+
+    const reactions = { ...entry };
+    persist('updateDmMessageReactions', { conversationKey: conversation, id: messageId, reactions });
+
+    return {
+      reactions,
+      // Per-emoji counts, plus who reacted, so each client can mark its own.
+      tally: Object.fromEntries(
+        Object.entries(entry).map(([key, handles]) => [key, handles.length])
+      ),
+      reacted: Object.fromEntries(
+        Object.entries(entry).map(([key, handles]) => [key, handles.includes(senderKey)])
+      ),
+    };
+  }
+
+  function getReactions(conversationKey, messageId) {
+    return reactionsFor(conversationKey, messageId);
+  }
+
   async function addDmMessage({ from, to, text, attachment = null, clientMessageId = null, replyTo = null }) {
     const senderKey = normalizeHandle(from);
     const recipientKey = normalizeHandle(to);
@@ -262,6 +323,8 @@ function createRealtimeStore(persistence) {
       createdAt: new Date().toISOString(),
     };
     persist('appendDmMessage', message);
+    // Prime the reaction cache for a message we have just stored.
+    reactionsCache.set(reactionKey(message.conversationKey, message.id), {});
     return message;
   }
 
@@ -283,6 +346,7 @@ function createRealtimeStore(persistence) {
         text: row.text || '',
         attachment: row.attachment || null,
         replyTo: row.replyTo || row.reply_to || null,
+        reactions: row.reactions || null,
         createdAt: row.created_at || row.createdAt,
       }));
     }
@@ -485,6 +549,9 @@ function createRealtimeStore(persistence) {
     addDmMessage,
     getDmMessages,
     deleteDmMessage,
+    hydrateReactions,
+    toggleDmReaction,
+    getReactions,
     dmRoomKey,
     findProfile,
     getFriendState,

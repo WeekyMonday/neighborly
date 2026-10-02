@@ -62,6 +62,7 @@ create table if not exists neighborly_dm_messages (
   text            text not null default '',
   attachment      jsonb,
   reply_to        jsonb,
+  reactions       jsonb default '{}'::jsonb,
   created_at      timestamptz not null default now()
 );
 

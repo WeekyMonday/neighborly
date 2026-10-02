@@ -1160,3 +1160,57 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
 /* Keep the popups above the scrolling message list. */
 .dm-conversation-main .dm-message-list { position: relative; z-index: 1; }
 .dm-conversation-main .composer-input-wrapper { position: relative; z-index: 5; }
+/* === DM reactions: chips under a message + the hover picker ============== */
+.dm-reactions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.dm-reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #b5bac1;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.dm-reaction-chip:hover { border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.1); }
+.dm-reaction-chip.mine {
+  border-color: #5865f2;
+  background: rgba(88, 101, 242, 0.2);
+  color: #dbdee1;
+}
+
+/* The picker is attached to <body>, so it is positioned with fixed coords. */
+.dm-reaction-popup {
+  position: fixed;
+  z-index: 999;
+  display: flex;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #2b2d31;
+  border: 1px solid #1e1f22;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.dm-reaction-option {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dm-reaction-option:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.15); }

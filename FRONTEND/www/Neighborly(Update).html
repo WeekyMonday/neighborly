@@ -7985,6 +7985,7 @@
             ? `<div class="dm-reply-quote"><b>${escapeFriendsText(message.replyTo.author || 'Unknown')}</b><span>${escapeFriendsText(message.replyTo.text || 'Attachment')}</span></div>`
             : '';
           const media = hasMedia ? renderAttachmentHtml(message.attachment, message.id) : '';
+          const reactions = renderDirectReactionChips(message);
           const textHtml = body
             ? `<div class="dm-bubble">${linkifyMessageText(escapeFriendsText(body))}</div>`
             : '';
@@ -7993,8 +7994,12 @@
             ${reply}
             ${media}
             ${textHtml}
+            ${reactions}
             <time class="dm-message-time">${formatDmTime(message.createdAt)}</time>
             <div class="dm-message-actions">
+              <button title="Add reaction" onclick="toggleDirectReactionPicker('${escapeFriendsText(String(message.id))}', this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+              </button>
               <button title="Reply" onclick="startDirectReply('${escapeFriendsText(String(message.id))}')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>
               </button>
@@ -8008,7 +8013,95 @@
       list.scrollTop = list.scrollHeight;
     }
 
-    /** Turns URLs in message text into clickable links. */
+    /* ---- Reactions ------------------------------------------------------------
+       Same behaviour as the channel composer: hover a message, hit the smiley,
+       pick an emoji. The server owns the tally so both people see the same
+       chips and a reaction survives a reload.                               */
+
+    /** Emoji offered in the hover picker (a shorter, reaction-style set). */
+    const quickReactionSet = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀'];
+
+    function toggleDirectReactionPicker(msgId, button) {
+      const existing = document.querySelector('.dm-reaction-popup');
+      if (existing) existing.remove();
+
+      const popup = document.createElement('div');
+      popup.className = 'dm-reaction-popup';
+      popup.innerHTML = quickReactionSet
+        .map(
+          (emoji) =>
+            `<button class="dm-reaction-option" title="React ${emoji}" onclick="reactToDirectMessage('${escapeFriendsText(String(msgId))}','${emoji}')">${emoji}</button>`
+        )
+        .join('');
+
+      document.body.appendChild(popup);
+      const rect = button.getBoundingClientRect();
+      popup.style.top = `${Math.max(8, rect.top - 46)}px`;
+      popup.style.left = `${Math.min(window.innerWidth - 260, rect.left - 120)}px`;
+
+      // Close on the next outside click or Escape.
+      setTimeout(() => {
+        const close = (event) => {
+          if (popup.contains(event.target)) return;
+          popup.remove();
+          document.removeEventListener('click', close, true);
+          document.removeEventListener('keydown', onKey);
+        };
+        const onKey = (event) => {
+          if (event.key !== 'Escape') return;
+          popup.remove();
+          document.removeEventListener('click', close, true);
+          document.removeEventListener('keydown', onKey);
+        };
+        document.addEventListener('click', close, true);
+        document.addEventListener('keydown', onKey);
+      }, 0);
+    }
+
+    function reactToDirectMessage(msgId, emoji) {
+      const socket = window.neighborlySocket;
+      if (!socket || !socket.connected || !directMessages.activePeer) return;
+      triggerFeedback(5);
+      socket.emit('dm:react', { to: directMessages.activePeer, messageId: msgId, emoji });
+    }
+
+    function applyDirectReaction(payload = {}) {
+      const key = String(payload.conversationKey || '');
+      if (!key || !directMessages.conversations[key]) return;
+      const conversation = getConversation(key);
+      const message = conversation.messages.find((item) => item.id === payload.messageId);
+      if (!message) return;
+
+      // Rebuild from the server tally so the two sides never drift.
+      message.reactions = {};
+      for (const [emoji, count] of Object.entries(payload.tally || {})) {
+        if (!count) continue;
+        message.reactions[emoji] = {
+          count,
+          mine: Boolean((payload.reacted || {})[emoji]),
+        };
+      }
+
+      if (isForActiveConversation(payload)) {
+        directMessages.messages = conversation.messages;
+        renderDirectMessage();
+      }
+      saveDmConversations();
+    }
+
+    function renderDirectReactionChips(message) {
+      const reactions = message.reactions || {};
+      const entries = Object.entries(reactions).filter(([, value]) => value && value.count > 0);
+      if (!entries.length) return '';
+      return `<div class="dm-reactions-row">${entries
+        .map(
+          ([emoji, value]) =>
+            `<button class="dm-reaction-chip${value.mine ? ' mine' : ''}" onclick="reactToDirectMessage('${escapeFriendsText(String(message.id))}','${emoji}')">${emoji} ${value.count}</button>`
+        )
+        .join('')}</div>`;
+    }
+
+    /** Turns URL text into links, shared with the reply/delete actions. */
     function linkifyMessageText(text) {
       return String(text).replace(
         /(https?:\/\/[^\s<]+)/g,
@@ -10575,6 +10668,39 @@
         msg.reactions[emoji].mine = true;
       }
       renderMessages();
+
+      // Broadcast it, so other members in the channel see the same reaction
+      // instead of only the person who clicked.
+      const socket = window.neighborlySocket;
+      if (socket && socket.connected) {
+        socket.emit('chat:reaction', {
+          channel: channelRoomKey(appState.activeServerId, appState.activeChannelId),
+          messageId: msgId,
+          emoji,
+          active: !mine,
+        });
+      }
+    }
+
+    /** Applies a reaction that another member made in the current channel. */
+    function handleChannelReaction(payload = {}) {
+      if (payload.channel !== channelRoomKey(appState.activeServerId, appState.activeChannelId)) return;
+      const key = messageStoreKey(appState.activeServerId, appState.activeChannelId);
+      const list = appState.messages[key] || [];
+      const message = list.find((item) => item.id === payload.messageId);
+      if (!message) return;
+      if (!message.reactions) message.reactions = {};
+
+      if (payload.active) {
+        if (!message.reactions[payload.emoji]) message.reactions[payload.emoji] = { count: 0, mine: false };
+        message.reactions[payload.emoji].count += 1;
+      } else {
+        if (message.reactions[payload.emoji]) {
+          message.reactions[payload.emoji].count -= 1;
+          if (message.reactions[payload.emoji].count <= 0) delete message.reactions[payload.emoji];
+        }
+      }
+      renderMessages();
     }
 
     function copyMessageText(msgId) {
@@ -12072,6 +12198,7 @@
         closeDirectMessage();
         showFriendToast('This conversation is closed — you are no longer friends.');
       });
+      socket.on('dm:reaction', applyDirectReaction);
       socket.on('dm:unread-clear', handleDmUnreadClear);
       socket.on('dm:deleted', (payload = {}) => {
         const key = String(payload.conversationKey || '');
@@ -12085,6 +12212,7 @@
         renderDesktopDMList();
         saveDmConversations();
       });
+      socket.on('chat:reaction', handleChannelReaction);
       socket.on('chat:message', handleChannelMessage);
       socket.on('chat:history', handleChannelHistory);
       socket.on('profile:saved', (profile = {}) => {

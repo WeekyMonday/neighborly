@@ -60,6 +60,7 @@ function createMemoryPersistence() {
     },
     async appendDmMessage() {},
     async deleteDmMessage() {},
+    async updateDmMessageReactions() {},
     async loadDmMessages() {
       return [];
     },
@@ -223,10 +224,21 @@ function createFilePersistence(dataDir) {
         text: message.text,
         attachment: message.attachment || null,
         reply_to: message.replyTo || null,
+        reactions: {},
         created_at: message.createdAt,
       });
       // Keep the tail bounded so the file cannot grow without limit.
       if (state.dmMessages.length > 5000) state.dmMessages = state.dmMessages.slice(-5000);
+      flush();
+    },
+
+    async updateDmMessageReactions({ conversationKey, id, reactions }) {
+      const state = read();
+      const message = (state.dmMessages || []).find(
+        (m) => m.conversation_key === conversationKey && m.id === id
+      );
+      if (!message) return;
+      message.reactions = reactions || {};
       flush();
     },
 
@@ -364,8 +376,20 @@ function createSupabasePersistence(createClient, url, serviceRoleKey, tables = T
           text: message.text,
           attachment: message.attachment || null,
           reply_to: message.replyTo || null,
+          reactions: {},
           created_at: message.createdAt,
         })
+      );
+    },
+
+    async updateDmMessageReactions({ conversationKey, id, reactions }) {
+      await guard(
+        "updateDmMessageReactions",
+        client
+          .from(tables.dmMessages)
+          .update({ reactions: reactions || {} })
+          .eq("conversation_key", conversationKey)
+          .eq("id", id)
       );
     },
 

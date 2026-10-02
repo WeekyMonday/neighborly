@@ -73,6 +73,29 @@ function register(socket, user) {
   return waitForFriendState(socket, (state) => state.handle === user.handle.toLowerCase());
 }
 
+/**
+ * Waits for a reaction event matching a message and emoji.
+ *
+ * Both people in a conversation receive every reaction, so a socket can have
+ * an event from the previous step still queued. A plain once() would then
+ * resolve with stale data, so this filters on the payload.
+ */
+function waitForReaction(socket, messageId, emoji, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off('dm:reaction', onReaction);
+      reject(new Error(`Timed out waiting for a ${emoji} reaction on ${messageId}`));
+    }, timeoutMs);
+    const onReaction = (payload) => {
+      if (!payload || payload.messageId !== messageId || payload.emoji !== emoji) return;
+      clearTimeout(timer);
+      socket.off('dm:reaction', onReaction);
+      resolve(payload);
+    };
+    socket.on('dm:reaction', onReaction);
+  });
+}
+
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
@@ -199,7 +222,62 @@ async function main() {
     await pause(300);
     assert.strictEqual(leaked, false, 'A non-friend never receives any of this');
 
-    // ---- 4. Server channel chat works like a DM ----
+    // ---- 4. Reactions ---------------------------------------------------------
+    // Alice reacts to one of her own messages; both people must see the tally.
+    const bobSeesReaction = waitForReaction(bob, 'dm-1', '👍');
+    alice.emit('dm:react', { to: 'bob', messageId: 'dm-1', emoji: '👍' });
+    const reaction = await bobSeesReaction;
+    assert.strictEqual(reaction.messageId, 'dm-1', 'The reaction names the message');
+    assert.strictEqual(reaction.tally['👍'], 1, 'The tally counts the reaction');
+    assert.strictEqual(reaction.reacted['👍'], true, 'The reactor is marked as having reacted');
+
+    // Bob adds his own; the count must reach 2.
+    const aliceSeesTwo = waitForReaction(alice, 'dm-1', '👍');
+    bob.emit('dm:react', { to: 'alice', messageId: 'dm-1', emoji: '👍' });
+    const two = await aliceSeesTwo;
+    assert.strictEqual(two.tally['👍'], 2, 'A second person raises the count to 2');
+    assert.strictEqual(two.reacted['👍'], true, 'Both people see their own reaction flagged');
+
+    // Bob reacts with a different emoji; the first is untouched.
+    const aliceSeesHeart = waitForReaction(alice, 'dm-1', '❤️');
+    bob.emit('dm:react', { to: 'alice', messageId: 'dm-1', emoji: '❤️' });
+    const heart = await aliceSeesHeart;
+    assert.strictEqual(heart.tally['❤️'], 1, 'A different emoji is tracked separately');
+    assert.strictEqual(heart.tally['👍'], 2, 'The first emoji is untouched');
+
+    // Reacting with the same emoji again removes it.
+    const bobSeesRemoval = waitForReaction(bob, 'dm-1', '👍');
+    bob.emit('dm:react', { to: 'alice', messageId: 'dm-1', emoji: '👍' });
+    const removed = await bobSeesRemoval;
+    assert.strictEqual(removed.tally['👍'], 1, 'Toggling off lowers the count');
+    assert.strictEqual(removed.reacted['👍'], false, 'The toggled-off reaction is no longer mine');
+
+    // Toggling the last reaction off removes the emoji from the tally entirely.
+    const bobSeesParty = waitForReaction(bob, 'dm-1', '🎉');
+    bob.emit('dm:react', { to: 'alice', messageId: 'dm-1', emoji: '🎉' });
+    assert.strictEqual((await bobSeesParty).tally['🎉'], 1, 'A new emoji starts at one');
+
+    const aliceSeesEmpty = waitForReaction(alice, 'dm-1', '🎉');
+    bob.emit('dm:react', { to: 'alice', messageId: 'dm-1', emoji: '🎉' });
+    const empty = await aliceSeesEmpty;
+    assert.ok(!('🎉' in empty.tally), 'A zero-count reaction is removed from the tally');
+
+    // Reactions survive reopening the conversation.
+    const afterReactions = waitForEvent(bob, 'dm:history');
+    bob.emit('dm:open', { to: 'alice' });
+    const reactionHistory = await afterReactions;
+    const reacted = reactionHistory.messages.find((m) => m.id === 'dm-1');
+    assert.ok(reacted, 'The reacted message is still in history');
+    assert.ok(reacted.reactions, 'Reactions are stored with the message');
+    assert.strictEqual(reacted.reactions['👍'].length, 1, 'The surviving reaction is still there');
+    assert.ok(!('🎉' in reacted.reactions), 'The emptied reaction is not stored');
+
+    // A non-friend cannot react in someone else's conversation.
+    const eveReactionDenied = waitForEvent(eve, 'dm:error');
+    eve.emit('dm:react', { to: 'alice', messageId: 'dm-1', emoji: '🔥' });
+    assert.match((await eveReactionDenied).message, /only message friends/i, 'Non-friends cannot react');
+
+    // ---- 5. Server channel chat works like a DM ----
     const CHANNEL = 'srv:server-1:chan:general';
     const joined = waitForEvent(alice, 'chat:history');
     alice.emit('join-channel', { channel: CHANNEL, serverId: 'server-1', channelId: 'general' });
