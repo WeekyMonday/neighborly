@@ -911,3 +911,129 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
   font: inherit; font-weight: 600; font-size: 14px; color: #fff; background: #5865f2; cursor: pointer;
 }
 .dm-send-button:hover { background: #4752c4; }
+/* === Redesigned DM layout: conversation + right-hand profile card ======== */
+.dm-conversation-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+.dm-conversation-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header ----------------------------------------------------------------- */
+.dm-conversation-header { display: flex; align-items: center; gap: 10px; }
+.dm-conversation-heading { flex: 1 1 auto; min-width: 0; }
+.dm-conversation-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.dm-conversation-actions button {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent;
+  color: #b5bac1; cursor: pointer; font-size: 20px; line-height: 1;
+}
+.dm-conversation-actions button:hover { background: rgba(255, 255, 255, 0.06); color: #dbdee1; }
+.dm-conversation-actions svg { width: 18px; height: 18px; }
+
+/* Right profile card ----------------------------------------------------- */
+.dm-profile-card {
+  flex: 0 0 300px;
+  width: 300px;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--discord-secondaryBg, #2b2d31);
+  border-left: 1px solid rgba(0, 0, 0, 0.3);
+}
+.dm-profile-banner {
+  height: 96px;
+  border-radius: 6px;
+  background-color: #5865f2;
+  background-size: cover;
+  background-position: center;
+}
+.dm-profile-avatar-wrap { position: relative; margin-top: -34px; margin-bottom: 10px; }
+.dm-profile-avatar {
+  display: block;
+  width: 68px; height: 68px;
+  border-radius: 50%;
+  border: 6px solid var(--discord-secondaryBg, #2b2d31);
+  background-size: cover;
+  background-position: center;
+  background-color: #404249;
+}
+.dm-profile-online {
+  position: absolute;
+  right: 4px; bottom: 4px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #23a55a;
+  border: 3px solid var(--discord-secondaryBg, #2b2d31);
+}
+.dm-profile-online[hidden] { display: none; }
+.dm-profile-identity { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.dm-profile-identity strong { color: #f2f3f5; font-size: 19px; font-weight: 700; }
+.dm-profile-handle { color: #949ba4; font-size: 13px; }
+.dm-profile-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.dm-profile-action {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  border: 0; border-radius: 6px;
+  font: inherit; font-size: 13px; font-weight: 500;
+  color: #dbdee1; background: #383a40;
+  cursor: pointer;
+}
+.dm-profile-action:hover { background: #404249; }
+.dm-profile-action svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.dm-profile-action.danger { color: #f23f43; background: rgba(242, 63, 67, 0.12); }
+.dm-profile-action.danger:hover { background: rgba(242, 63, 67, 0.22); }
+.dm-profile-section { margin-bottom: 16px; }
+.dm-profile-section h4 {
+  margin: 0 0 6px;
+  color: #b5bac1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dm-profile-bio, .dm-profile-since { margin: 0; color: #949ba4; font-size: 13px; line-height: 1.5; }
+.dm-profile-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* On narrow screens the card is dropped rather than squeezed. */
+@media (max-width: 1100px) {
+  .dm-profile-card { display: none; }
+}
+
+/* Beta banner + header refresh control ----------------------------------- */
+.desktop-dm-header-actions { display: inline-flex; align-items: center; gap: 2px; }
+.desktop-dm-header-actions button {
+  border: 0; background: transparent; color: #949ba4;
+  font-size: 15px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+}
+.desktop-dm-header-actions button:hover { color: #dbdee1; background: rgba(255, 255, 255, 0.06); }
+.desktop-dm-header-actions button.spinning { animation: nex-spin 0.7s linear infinite; }
+@keyframes nex-spin { to { transform: rotate(360deg); } }
+
+.beta-banner {
+  display: flex; align-items: center; gap: 8px;
+  margin: 14px 10px 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(88, 101, 242, 0.12);
+  color: #949ba4;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.beta-badge {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #5865f2;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}

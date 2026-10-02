@@ -14,6 +14,16 @@ const { createServerInviteToken, verifyServerInviteToken } = require("./inviteTo
 
 const neighborlyEntryFile = path.join(__dirname, "../FRONTEND/www/Neighborly(Update).html");
 
+// Bumped whenever a release ships; reported by GET /api so the frontend can
+// detect that it is running a stale cached build.
+let pkgVersion = "1.0.0";
+try {
+  pkgVersion = require(path.join(__dirname, "..", "package.json")).version || pkgVersion;
+} catch {
+  /* package.json is not readable in some bundling setups; the default stands. */
+}
+const appVersion = pkgVersion;
+
 // Durable storage (Supabase when configured). Falls back to memory, so the
 // app still boots unchanged if the database is unreachable or not set up yet.
 const persistence = createPersistence();
@@ -109,6 +119,8 @@ app.get("/api/config", (req, res) => {
   res.json({
     appUrl,
     appName: "Neighborly",
+    releaseChannel: "beta",
+    version: appVersion,
     environment: process.env.NODE_ENV || "development",
   });
 });
@@ -268,6 +280,27 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("friend:remove", (payload = {}) => {
+    const handle = socket.user?.handle;
+    const otherHandle = payload.from || payload.handle || "";
+    if (!handle || !otherHandle) return;
+
+    const result = realtimeStore.removeFriend(handle, otherHandle);
+    if (!result.success) return;
+
+    // Both sides need the new list, and DMs with this person are now closed
+    // off, so take their sockets out of the shared room.
+    broadcastFriendState(handle);
+    broadcastFriendState(otherHandle);
+
+    const room = realtimeStore.dmRoomKey(handle, otherHandle);
+    const peers = socketsByHandle.get(handleKey(otherHandle));
+    if (peers) for (const peer of peers) peer.leave(room);
+    socket.leave(room);
+
+    socket.emit("dm:closed", { conversationKey: room });
+  });
+
   socket.on("dm:send", async (payload = {}) => {
     const guard = dmGuard(socket, payload);
     if (!guard) return;
@@ -303,6 +336,39 @@ io.on("connection", (socket) => {
 
   socket.on("friend:sync", () => {
     if (socket.user?.handle) socket.emit("friend:state", realtimeStore.getFriendState(socket.user.handle));
+  });
+
+  /**
+   * Profile edits (name, avatar photo, bio) are pushed to the server so they
+   * become visible to other people. The server persists the profile and then
+   * re-broadcasts each friend's state, which is what makes an avatar change
+   * appear in everyone else's sidebar without them reloading.
+   */
+  socket.on("profile:update", (payload = {}) => {
+    const handle = socket.user?.handle;
+    if (!handle) {
+      socket.emit("profile:error", { message: "Reconnect to Neighborly and try again." });
+      return;
+    }
+
+    const updated = realtimeStore.registerUser({
+      ...socket.user,
+      ...payload,
+      // The handle is the account identity here; never let it be rewritten
+      // through a profile edit, otherwise friends would lose track of you.
+      handle: socket.user.handle,
+    });
+    socket.user = { ...socket.user, ...updated };
+
+    // Everyone who can see this profile gets the new one: the user themself
+    // plus each of their friends. Only notifying the edited user would leave
+    // everyone else's sidebar showing the old photo.
+    broadcastFriendState(handle);
+    for (const friend of realtimeStore.getFriends(handle)) {
+      if (friend.handle) broadcastFriendState(friend.handle);
+    }
+    socket.emit("profile:saved", realtimeStore.findProfile(handle));
+    io.emit("presence-update", { users: realtimeStore.getOnlineUsers() });
   });
 
   socket.on("friend:request", (payload = {}) => {

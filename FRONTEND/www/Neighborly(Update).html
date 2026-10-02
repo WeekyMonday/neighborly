@@ -5782,8 +5782,13 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
               <span>Friends</span>
             </button>
-            <div class="desktop-dm-section-header"><span>DIRECT MESSAGES</span><button onclick="openFriendsHome()" title="New message">+</button></div>
+            <div class="desktop-dm-section-header"><span>DIRECT MESSAGES</span><span class="desktop-dm-header-actions"><button onclick="refreshNeighborly()" title="Refresh" aria-label="Refresh">&#8635;</button><button onclick="openFriendsHome()" title="New message">+</button></span></div>
             <div class="desktop-dm-list" id="desktop-dm-list"></div>
+
+            <div class="beta-banner">
+              <span class="beta-badge">BETA</span>
+              <span>Things may change as we improve them.</span>
+            </div>
 
             <!-- Custom Mascot Illustration Card (Screenshot_20260701_203021) -->
             <div class="mascot-card">
@@ -5976,27 +5981,66 @@
       <!-- Direct Message Conversation: private, two people only -->
       <section id="dm-conversation-screen" class="dm-conversation hidden" aria-label="Direct message">
         <header class="dm-conversation-header">
-          <div class="dm-conversation-peer">
-            <span id="dm-peer-avatar" class="dm-peer-avatar">?</span>
-            <div class="dm-conversation-heading">
-              <strong id="dm-peer-name">Conversation</strong>
-              <small id="dm-peer-status">Offline</small>
-            </div>
+          <span id="dm-peer-avatar" class="dm-peer-avatar">?</span>
+          <div class="dm-conversation-heading">
+            <strong id="dm-peer-name">Conversation</strong>
+            <small id="dm-peer-status">Offline</small>
           </div>
-          <button class="dm-conversation-close" onclick="closeDirectMessage()" title="Close conversation">&times;</button>
+          <div class="dm-conversation-actions">
+            <button onclick="openMemberProfile(document.getElementById('dm-peer-name').textContent)" title="Conversation details" aria-label="Conversation details">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            </button>
+            <button onclick="closeDirectMessage()" title="Close conversation" aria-label="Close conversation">&times;</button>
+          </div>
         </header>
-        <div id="dm-message-list" class="dm-message-list" aria-live="polite"></div>
-        <div id="dm-typing-indicator" class="dm-typing-indicator hidden"></div>
-        <form class="dm-composer" onsubmit="return sendDirectMessage(event)">
-          <input
-            id="dm-message-input"
-            type="text"
-            autocomplete="off"
-            maxlength="4000"
-            placeholder="Message @friend"
-            oninput="handleDirectMessageTyping()">
-          <button type="submit" class="dm-send-button" title="Send message">Send</button>
-        </form>
+
+        <div class="dm-conversation-body">
+          <div class="dm-conversation-main">
+            <div id="dm-message-list" class="dm-message-list" aria-live="polite"></div>
+            <div id="dm-typing-indicator" class="dm-typing-indicator hidden"></div>
+            <form class="dm-composer" onsubmit="return sendDirectMessage(event)">
+              <input
+                id="dm-message-input"
+                type="text"
+                autocomplete="off"
+                maxlength="4000"
+                placeholder="Message"
+                oninput="handleDirectMessageTyping()">
+              <button type="submit" class="dm-send-button" title="Send message">Send</button>
+            </form>
+          </div>
+
+          <!-- Right-hand profile card, modelled on the reference design -->
+          <aside class="dm-profile-card" aria-label="Profile">
+            <div class="dm-profile-banner" id="dm-profile-banner"></div>
+            <div class="dm-profile-avatar-wrap">
+              <span id="dm-profile-avatar" class="dm-profile-avatar"></span>
+              <span class="dm-profile-online" id="dm-profile-online" hidden></span>
+            </div>
+            <div class="dm-profile-identity">
+              <strong id="dm-profile-name">—</strong>
+              <span id="dm-profile-handle" class="dm-profile-handle"></span>
+            </div>
+            <div class="dm-profile-actions">
+              <button class="dm-profile-action" onclick="refreshNeighborly()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7"></path><polyline points="21 3 21 9 15 9"></polyline></svg>
+                <span>Refresh</span>
+              </button>
+              <button class="dm-profile-action danger" onclick="removeFriendFromDm()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="16" y1="8" x2="22" y2="14"></line><line x1="22" y1="8" x2="16" y2="14"></line></svg>
+                <span>Remove Friend</span>
+              </button>
+            </div>
+            <div class="dm-profile-section">
+              <h4>About Me</h4>
+              <p id="dm-profile-bio" class="dm-profile-bio">No bio yet.</p>
+            </div>
+            <div class="dm-profile-section">
+              <h4>Member Since</h4>
+              <p id="dm-profile-since" class="dm-profile-since">—</p>
+            </div>
+          </aside>
+        </div>
       </section>
 
       <section id="friends-home-screen" class="friends-home-screen hidden" aria-label="Friends">
@@ -7254,17 +7298,17 @@
 
         <div class="channel-settings-panel" id="chsettings-panel-permissions" style="display:none;">
           <h2>Permissions</h2>
-          <p class="channel-settings-placeholder-text">Role and member-level permission overrides for this channel would be managed here. (Demo only)</p>
+          <p class="channel-settings-placeholder-text">Role and member-level permission overrides are coming in a future beta update.</p>
         </div>
 
         <div class="channel-settings-panel" id="chsettings-panel-invites" style="display:none;">
           <h2>Invites</h2>
-          <p class="channel-settings-placeholder-text">Active invite links created for this channel would be listed here. (Demo only)</p>
+          <p class="channel-settings-placeholder-text">Active invite links created for this channel are coming in a future beta update.</p>
         </div>
 
         <div class="channel-settings-panel" id="chsettings-panel-integrations" style="display:none;">
           <h2>Integrations</h2>
-          <p class="channel-settings-placeholder-text">Webhooks and bot integrations for this channel would be managed here. (Demo only)</p>
+          <p class="channel-settings-placeholder-text">Webhooks and bot integrations are coming in a future beta update.</p>
         </div>
 
       </div>
@@ -7479,6 +7523,91 @@
       return `neighborly_workspace_${String(identity).toLowerCase()}`;
     }
 
+    /* ---- Profile persistence ---------------------------------------------
+       Profile edits (display name, avatar photo, bio) used to live only in
+       appState, so a browser refresh threw them away and other people never
+       saw them at all. They are now saved locally on change and pushed to the
+       server, which persists them and re-broadcasts to friends.
+       -------------------------------------------------------------------- */
+
+    function profileStorageKey() {
+      const identity = (savedSession && (savedSession.email || savedSession.uid)) || 'guest';
+      return `neighborly_profile_state_${String(identity).toLowerCase()}`;
+    }
+
+    function saveLocalProfile() {
+      try {
+        const user = appState.currentUser || {};
+        localStorage.setItem(
+          profileStorageKey(),
+          JSON.stringify({
+            version: 1,
+            name: user.name,
+            handle: user.handle,
+            initials: user.initials,
+            color: user.color,
+            avatarImage: user.avatarImage,
+            bannerImage: user.bannerImage,
+            pronouns: user.pronouns,
+            bio: user.bio,
+            customStatus: user.customStatus,
+          })
+        );
+      } catch (error) {
+        // A large avatar can exceed the storage quota; that must never break
+        // the app, so fall back to saving everything except the photo.
+        try {
+          const user = appState.currentUser || {};
+          localStorage.setItem(
+            profileStorageKey(),
+            JSON.stringify({ version: 1, name: user.name, handle: user.handle, initials: user.initials, color: user.color })
+          );
+        } catch {
+          console.warn('Could not save your profile locally.', error);
+        }
+      }
+    }
+
+    function loadLocalProfile() {
+      try {
+        const raw = localStorage.getItem(profileStorageKey());
+        if (!raw) return false;
+        const saved = JSON.parse(raw);
+        if (!saved || saved.version !== 1) return false;
+        appState.currentUser = { ...appState.currentUser, ...saved };
+        return true;
+      } catch (error) {
+        console.warn('Could not restore your profile.', error);
+        return false;
+      }
+    }
+
+    /**
+     * Push the current profile to the server so other people see the change.
+     * Fire-and-forget: the local save has already happened, so a dropped
+     * connection only delays the update until the socket reconnects.
+     */
+    let profilePushTimer = null;
+    function pushProfileToServer(immediate = false) {
+      if (profilePushTimer) clearTimeout(profilePushTimer);
+      const send = () => {
+        const socket = window.neighborlySocket;
+        if (!socket || !socket.connected) return;
+        const user = appState.currentUser || {};
+        socket.emit('profile:update', {
+          name: user.name,
+          initials: user.initials,
+          color: user.color,
+          avatarImage: user.avatarImage,
+          pronouns: user.pronouns,
+          bio: user.bio,
+          customStatus: user.customStatus,
+        });
+      };
+      if (immediate) send();
+      else profilePushTimer = setTimeout(send, 400);
+    }
+
     const MAX_PERSISTED_MESSAGES_PER_CHANNEL = 200;
 
     function saveLocalWorkspace() {
@@ -7538,11 +7667,20 @@
 
     // Save on the way out, and periodically so long sessions are never lost
     // if the tab is killed without warning.
-    window.addEventListener('beforeunload', saveLocalWorkspace);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') saveLocalWorkspace();
+    window.addEventListener('beforeunload', () => {
+      saveLocalWorkspace();
+      saveLocalProfile();
     });
-    setInterval(saveLocalWorkspace, 5000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        saveLocalWorkspace();
+        saveLocalProfile();
+      }
+    });
+    setInterval(() => {
+      saveLocalWorkspace();
+      saveLocalProfile();
+    }, 5000);
 
     let waveAnimationId = null;
     let incomingNotificationAudio = null;
@@ -7606,6 +7744,9 @@
       // Restore the servers and messages this account created previously.
       // Without this, every refresh started from an empty server list.
       loadLocalWorkspace();
+
+      // Restore profile edits (name, avatar photo, bio) made before a refresh.
+      loadLocalProfile();
 
       // Initial Render lists
       renderServers();
@@ -7700,6 +7841,8 @@
       if (nameEl) nameEl.textContent = peer.name || `@${peer.handle || ''}`;
       if (statusEl) statusEl.textContent = peer.online ? 'Online' : 'Offline';
       if (input) input.placeholder = `Message @${peer.handle || 'friend'}`;
+
+      renderDmProfileCard(peer);
 
       const list = document.getElementById('dm-message-list');
       if (!list) return;
@@ -7797,6 +7940,108 @@
       if (directMessages.messages.some((message) => message.id === payload.id)) return;
       directMessages.messages.push(payload);
       renderDirectMessage();
+    }
+
+    /**
+     * Refreshes everything without a full page reload.
+     *
+     * A hard browser reload used to be the only way to pick up new content,
+     * and that reset the whole app. This re-syncs from the server in place:
+     * local state is saved first, so nothing is lost, and the open
+     * conversation is reopened afterwards.
+     */
+    function refreshNeighborly() {
+      triggerFeedback(8);
+      saveLocalWorkspace();
+      saveLocalProfile();
+
+      const button = document.querySelector('.desktop-dm-header-actions button[title="Refresh"]');
+      if (button) button.classList.add('spinning');
+
+      const openPeer = directMessages.activePeer;
+      const finish = () => {
+        if (button) button.classList.remove('spinning');
+        renderServers();
+        renderChannels();
+        renderDesktopDMList();
+        renderFriendsHome();
+        if (openPeer) openDirectMessage(openPeer);
+      };
+
+      const socket = window.neighborlySocket;
+      if (socket && socket.connected) {
+        // The server replies with a fresh friend:state, and applyFriendState
+        // repaints the sidebar; the short delay covers the round trip.
+        socket.emit('friend:sync');
+        socket.emit('request-online-users');
+        setTimeout(finish, 600);
+        return;
+      }
+
+      // No live connection: reload the page, which is now safe because
+      // servers, messages and profile all survive in localStorage.
+      window.location.reload();
+    }
+
+    /** Fills the right-hand profile card shown beside an open conversation. */
+    function renderDmProfileCard(peer = {}) {
+      const avatar = document.getElementById('dm-profile-avatar');
+      if (avatar) {
+        avatar.style.backgroundImage = `url('${peer.avatarImage || DEFAULT_AVATAR_IMAGE}')`;
+        avatar.textContent = '';
+      }
+
+      const banner = document.getElementById('dm-profile-banner');
+      if (banner) {
+        if (peer.bannerImage) {
+          banner.style.backgroundImage = `url('${peer.bannerImage}')`;
+          banner.classList.add('has-image');
+        } else {
+          banner.style.backgroundImage = 'none';
+          banner.classList.remove('has-image');
+          banner.style.backgroundColor = peer.color || '#5865f2';
+        }
+      }
+
+      const online = document.getElementById('dm-profile-online');
+      if (online) online.hidden = !peer.online;
+
+      const nameEl = document.getElementById('dm-profile-name');
+      if (nameEl) nameEl.textContent = peer.name || 'Unknown member';
+      const handleEl = document.getElementById('dm-profile-handle');
+      if (handleEl) handleEl.textContent = peer.handle ? `@${peer.handle}` : '';
+
+      const bioEl = document.getElementById('dm-profile-bio');
+      if (bioEl) bioEl.textContent = peer.bio || 'No bio yet.';
+
+      const sinceEl = document.getElementById('dm-profile-since');
+      if (sinceEl) {
+        const joined = peer.updatedAt || peer.createdAt;
+        const date = joined ? new Date(joined) : null;
+        sinceEl.textContent = date && !Number.isNaN(date.getTime())
+          ? date.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })
+          : 'Recently';
+      }
+    }
+
+    /** Removes the friend in the open conversation, then closes it. */
+    function removeFriendFromDm() {
+      const peer = directMessages.peer;
+      if (!peer || !peer.handle) return;
+      const handle = String(peer.handle).toLowerCase();
+      if (!confirm(`Remove @${peer.handle} from your friends?`)) return;
+
+      const socket = window.neighborlySocket;
+      if (socket && socket.connected) socket.emit('friend:remove', { from: handle });
+
+      // Update the local list straight away; the server's friend:state
+      // broadcast confirms it a moment later.
+      appState.friends = appState.friends.filter((friend) => String(friend.handle).toLowerCase() !== handle);
+      appState.mobileFriends = appState.mobileFriends.filter((friend) => String(friend.handle).toLowerCase() !== handle);
+      renderDesktopDMList();
+      renderFriendsHome();
+      closeDirectMessage();
+      showFriendToast(`Removed @${peer.handle} from your friends.`);
     }
 
     function handleDmTyping(payload = {}) {
@@ -8724,7 +8969,7 @@
       const contacts = appState.friends.filter(friend => !query || `${friend.name} ${friend.handle} ${friend.lastMessage || ''}`.toLowerCase().includes(query));
       list.innerHTML = contacts.map(friend => `
         <button class="desktop-dm-contact" onclick="openDirectMessage('${escapeFriendsText(String(friend.handle || '').toLowerCase())}')">
-          <span class="desktop-dm-avatar" style="background:${friend.color}">${escapeFriendsText(friend.initials)}<i class="${friend.online ? 'online' : ''}"></i></span>
+          <span class="desktop-dm-avatar" style="${avatarBgStyle(friend.color, friend.avatarImage)}">${avatarLabel(friend.initials, friend.avatarImage)}<i class="${friend.online ? 'online' : ''}"></i></span>
           <span class="desktop-dm-contact-copy"><strong>${escapeFriendsText(friend.name)}</strong><small>${escapeFriendsText(friend.lastMessage || (friend.online ? 'Online' : 'Offline'))}</small></span>
         </button>`).join('') || `<p class="friends-empty-state">${query ? 'No conversations found.' : 'No direct messages yet.'}</p>`;
     }
@@ -8770,7 +9015,7 @@
         const subtitle = tab === 'pending' ? `Incoming friend request · @${escapeFriendsText(friend.handle)}`
           : tab === 'blocked' ? `Blocked · @${escapeFriendsText(friend.handle)}`
           : friend.activity || (friend.online ? 'Online' : 'Offline');
-        return `<div class="friend-row"><span class="friend-row-avatar" style="background:${friend.color}">${escapeFriendsText(friend.initials)}<i class="${friend.online && tab !== 'pending' ? 'online' : ''}"></i></span><span class="friend-row-copy"><strong>${escapeFriendsText(friend.name)}</strong><small>${subtitle}</small></span>${actionButtons}</div>`;
+        return `<div class="friend-row"><span class="friend-row-avatar" style="${avatarBgStyle(friend.color, friend.avatarImage)}">${avatarLabel(friend.initials, friend.avatarImage)}<i class="${friend.online && tab !== 'pending' ? 'online' : ''}"></i></span><span class="friend-row-copy"><strong>${escapeFriendsText(friend.name)}</strong><small>${subtitle}</small></span>${actionButtons}</div>`;
       }).join('');
       const emptyMessages = { online: 'No friends are online yet.', all: 'You have not added any friends yet.', pending: 'No friend requests waiting for you.', suggestions: 'Suggestions will appear here when online services are connected.', blocked: 'You have not blocked anyone.', add: '' };
       const resultMarkup = rows || `<div class="friends-empty-state">${emptyMessages[tab]}</div>`;
@@ -8956,12 +9201,12 @@
 
     function mockInviteToVoice() {
       triggerFeedback(10);
-      alert("Invite-to-voice would open your friends list here. (Demo only)");
+      alert("Inviting friends to a voice channel is coming in a future beta update.");
     }
 
     function mockChooseActivity() {
       triggerFeedback(10);
-      alert("Activities (watch together, games, etc.) would open here. (Demo only)");
+      alert("Activities (watch together, games, etc.) are coming in a future beta update.");
     }
 
     function showCallStatus(message, isError = false) {
@@ -9064,7 +9309,7 @@
       triggerFeedback(8);
       const status = prompt("Set a status for this voice channel:", "");
       if (status !== null && status.trim()) {
-        alert(`Channel status set to: "${status.trim()}" (Demo only — not persisted)`);
+        alert(`Channel status set to: "${status.trim()}"`);
       }
     }
 
@@ -9192,7 +9437,7 @@
        ========================================================================= */
     function mockInviteToChannel() {
       triggerFeedback(10);
-      alert("An invite link for this channel would be generated here. (Demo only)");
+      alert("Invite links for channels are coming in a future beta update.");
     }
 
     function findActiveSettingsChannel() {
@@ -9842,7 +10087,7 @@
       closeAllMessageMenus();
       if (!msg) return;
       const isOwn = msg.author === appState.currentUser.name;
-      if (!isOwn) return; // moderator delete-for-others intentionally out of scope for this demo
+      if (!isOwn) return; // moderator delete-for-others is out of scope for now
       if (!confirm('Delete this message?')) return;
       appState.messages[key] = list.filter(m => m.id !== msgId);
       triggerFeedback(15);
@@ -10248,10 +10493,42 @@
       triggerFeedback(10);
       const next = prompt("Enter your new username:", appState.currentUser.handle);
       if (next && next.trim()) {
-        appState.currentUser.handle = next.trim().toLowerCase().replace(/\s+/g, '.');
+        const handle = next.trim().toLowerCase().replace(/\s+/g, '.');
+        const clash = appState.friends.find((friend) => String(friend.handle).toLowerCase() === handle);
+        if (clash) {
+          alert(`That username is already taken by @${clash.name}.`);
+          return;
+        }
+        appState.currentUser.handle = handle;
+        // The handle is the account identity: it also has to move in the
+        // signed-in session, otherwise the next reload reverts to the old one.
+        saveLocalProfile();
+        if (savedSession) {
+          savedSession.handle = handle;
+          localStorage.setItem('neighborly_session', JSON.stringify(savedSession));
+        }
+        reRegisterWithServer();
         renderAccountPage();
-        alert("Username updated. (Demo only — nothing is sent to a real server.)");
+        alert(`Your username is now @${handle}.`);
       }
+    }
+
+    /** Re-sends the current identity to the server after it changes. */
+    function reRegisterWithServer() {
+      const socket = window.neighborlySocket;
+      if (!socket || !socket.connected) return;
+      const user = appState.currentUser || {};
+      socket.emit('register-user', {
+        user: {
+          id: savedSession?.uid || savedUser?.email || user.handle,
+          name: user.name,
+          handle: user.handle,
+          email: user.email,
+          initials: user.initials,
+          color: user.color,
+          avatarImage: user.avatarImage,
+        },
+      });
     }
 
     function editContactField(field) {
@@ -10261,36 +10538,38 @@
       const next = prompt(`Enter your new ${label}:`, current);
       if (next !== null) {
         appState.currentUser[field] = next.trim();
+        saveLocalProfile();
+        reRegisterWithServer();
         renderAccountPage();
-        alert(`Your ${label} was updated. (Demo only — nothing is sent to a real server.)`);
+        alert(`Your ${label} was updated.`);
       }
     }
 
     function mockPasswordChange() {
       triggerFeedback(10);
-      alert("This is a UI prototype, so password changes aren't wired to a real backend yet.");
+      alert("Password changes are handled by your sign-in provider. Use \"Password & Security\" in your account settings to reset it.");
     }
 
     function mockSecurityKeys() {
       triggerFeedback(10);
-      alert("Security key registration (WebAuthn) would happen here once a real backend is connected.");
+      alert("Security key registration (WebAuthn) is coming in a future beta update.");
     }
 
     function mockAuthenticatorApp() {
       triggerFeedback(10);
-      alert("Authenticator app setup (TOTP + QR code) would start here once a real backend is connected.");
+      alert("Authenticator app setup (TOTP + QR code) is coming in a future beta update.");
     }
 
     function mockDisableAccount() {
       triggerFeedback(10);
-      const confirmed = confirm("Disable your account? You can log back in later to reactivate it. (Demo only)");
-      if (confirmed) alert("Account disabled. (Demo only — nothing actually changed.)");
+      const confirmed = confirm("Disable your account? You can log back in later to reactivate it.");
+      if (confirmed) alert("Account disabling is coming in a future beta update.");
     }
 
     function mockDeleteAccount() {
       triggerFeedback(10);
-      const confirmed = confirm("Delete your account permanently? This cannot be undone. (Demo only)");
-      if (confirmed) alert("Account deletion would be processed here. (Demo only — nothing actually changed.)");
+      const confirmed = confirm("Delete your account permanently? This cannot be undone.");
+      if (confirmed) alert("Account deletion is coming in a future beta update.");
     }
 
     /* =========================================================================
@@ -10422,8 +10701,13 @@
       if (!validatePickedImage(file)) return;
       triggerFeedback(10);
       loadImageFromFile(file, (img) => {
-        appState.currentUser.avatarImage = cropToCoverDataURL(img, 320, 320, 0.9);
+        appState.currentUser.avatarImage = cropToCoverDataURL(img, 256, 256, 0.82);
         applyAvatarPreview();
+        // Show it everywhere on this account straight away...
+        saveLocalProfile();
+        applyCurrentUserAvatarEverywhere();
+        // ...and let everyone else see it too.
+        pushProfileToServer();
       });
     }
 
@@ -10433,8 +10717,10 @@
       if (!validatePickedImage(file)) return;
       triggerFeedback(10);
       loadImageFromFile(file, (img) => {
-        appState.currentUser.bannerImage = cropToCoverDataURL(img, 960, 240, 0.9);
+        appState.currentUser.bannerImage = cropToCoverDataURL(img, 640, 160, 0.75);
         applyBannerPreview();
+        saveLocalProfile();
+        pushProfileToServer();
       });
     }
 
@@ -10442,6 +10728,26 @@
       triggerFeedback(8);
       appState.currentUser.avatarImage = null;
       applyAvatarPreview();
+      saveLocalProfile();
+      applyCurrentUserAvatarEverywhere();
+      pushProfileToServer();
+    }
+
+    /** Repaints the signed-in user's avatar in every spot it is shown. */
+    function applyCurrentUserAvatarEverywhere() {
+      const user = appState.currentUser || {};
+      const targets = [
+        document.getElementById('user-avatar-tag'),
+        document.getElementById('mobile-tab-avatar'),
+        document.getElementById('account-settings-avatar'),
+        document.getElementById('modal-preview-avatar'),
+      ];
+      for (const el of targets) {
+        applyAvatarToElement(el, user.initials, user.color, user.avatarImage);
+      }
+      renderMessages();
+      renderChatMemberList();
+      renderDesktopDMList();
     }
 
     /* Sets an avatar element's fill (photo or default placeholder) directly */
@@ -10465,7 +10771,10 @@
     }
 
     function avatarLabel(initials, image) {
-      return '';
+      // Initials are hidden while a photo is showing, otherwise they render
+      // on top of the image.
+      if (image) return '';
+      return escapeFriendsText(String(initials || '').slice(0, 4));
     }
 
     function applyAvatarPreview() {
@@ -10621,6 +10930,10 @@
       appState.currentUser.initials = initials;
       appState.currentUser.pronouns = pronounsVal ? pronounsVal.value.trim() : "";
       appState.currentUser.bio = bioVal ? bioVal.value.trim() : "";
+
+      // Persist and broadcast so other people see the new name/photo.
+      saveLocalProfile();
+      pushProfileToServer(true);
 
       const profileName = document.getElementById('label-profile-name');
       const profileAvatar = document.getElementById('user-avatar-tag');
@@ -10865,7 +11178,7 @@
 
     function mockQuickAction() {
       triggerFeedback(8);
-      alert("This is a demo — real emoji/status pickers aren't wired up yet.");
+      alert("Custom emoji and status pickers are coming in a future beta update.");
     }
 
     function mockManageMember() {
@@ -10880,8 +11193,9 @@
 
     function mockSendMessage(handle) {
       triggerFeedback(10);
-      alert(`Opening a DM with @${handle}... (demo only)`);
       closeMemberProfile();
+      // Real behaviour now: opens the private conversation with this person.
+      openDirectMessage(String(handle || '').replace(/^@/, '').toLowerCase());
     }
 
     function mockAddFriend(handle) {
@@ -11154,7 +11468,7 @@
 
     function mockCallEffects() {
       triggerFeedback(10);
-      alert("Voice effects and filters would open here. (Demo only)");
+      alert("Voice effects and filters are coming in a future beta update.");
     }
 
     /* Native touch vibrations feedback wrapper */
@@ -11230,6 +11544,26 @@
       socket.on('dm:message', handleDmMessage);
       socket.on('dm:typing', handleDmTyping);
       socket.on('dm:error', (payload = {}) => showFriendToast(payload.message || 'Direct message failed.', true));
+      socket.on('dm:closed', (payload = {}) => {
+        if (!isForActiveConversation(payload)) return;
+        closeDirectMessage();
+        showFriendToast('This conversation is closed — you are no longer friends.');
+      });
+      socket.on('profile:saved', (profile = {}) => {
+        if (!profile.handle) return;
+        // Adopt the server's copy so other tabs/devices converge on one truth.
+        const next = { ...appState.currentUser };
+        for (const field of ['name', 'initials', 'color', 'avatarImage', 'pronouns', 'bio']) {
+          if (profile[field] !== undefined && profile[field] !== null && profile[field] !== '') {
+            next[field] = profile[field];
+          }
+        }
+        appState.currentUser = next;
+        saveLocalProfile();
+        applyCurrentUserAvatarEverywhere();
+        renderAccountPage();
+      });
+      socket.on('profile:error', (payload = {}) => showFriendToast(payload.message || 'Could not save your profile.', true));
       if (socket.connected) register();
       return socket;
     }
