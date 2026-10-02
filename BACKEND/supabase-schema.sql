@@ -6,6 +6,7 @@
 --
 -- Before your first run, delete the tables from any earlier attempt:
 --   drop table if exists neighborly_dm_messages;
+--   drop table if exists neighborly_channel_messages;
 --   drop table if exists neighborly_requests;
 --   drop table if exists neighborly_friends;
 --   drop table if exists neighborly_profiles;
@@ -66,6 +67,23 @@ create table if not exists neighborly_dm_messages (
 create index if not exists neighborly_dm_conversation_idx
   on neighborly_dm_messages (conversation_key, created_at desc);
 
+-- Server channel messages. Same guarantees as DMs: stored durably so channel
+-- history survives a restart, and never exposed to the browser.
+create table if not exists neighborly_channel_messages (
+  id           text primary key,
+  channel      text not null,
+  author       text not null default 'Neighborly User',
+  text         text not null default '',
+  attachment   jsonb,
+  author_handle text,
+  author_color text,
+  author_avatar text,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists neighborly_channel_messages_channel_idx
+  on neighborly_channel_messages (channel, created_at desc);
+
 -- ===== Lock everything down ================================================
 -- The anon key is public (it ships in the browser). Without RLS the anon role
 -- could read and write every user's messages, so RLS is enabled on all four
@@ -76,5 +94,6 @@ alter table neighborly_profiles    enable row level security;
 alter table neighborly_friends     enable row level security;
 alter table neighborly_requests    enable row level security;
 alter table neighborly_dm_messages enable row level security;
+alter table neighborly_channel_messages enable row level security;
 
 -- (intentionally no policies -> anon/authenticated get zero rows)

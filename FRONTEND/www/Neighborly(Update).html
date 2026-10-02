@@ -7670,16 +7670,19 @@
     window.addEventListener('beforeunload', () => {
       saveLocalWorkspace();
       saveLocalProfile();
+      saveDmConversations();
     });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         saveLocalWorkspace();
         saveLocalProfile();
+        saveDmConversations();
       }
     });
     setInterval(() => {
       saveLocalWorkspace();
       saveLocalProfile();
+      saveDmConversations();
     }, 5000);
 
     let waveAnimationId = null;
@@ -7748,6 +7751,10 @@
       // Restore profile edits (name, avatar photo, bio) made before a refresh.
       loadLocalProfile();
 
+      // Restore direct message history, so conversations survive a reload
+      // even before the server has replayed anything.
+      loadDmConversations();
+
       // Initial Render lists
       renderServers();
       renderChannels();
@@ -7799,11 +7806,83 @@
        message someone who is already your friend.
        ========================================================================= */
     const directMessages = {
-      activePeer: null,   // normalized handle
-      peer: null,         // profile object
-      messages: [],       // messages for the active conversation
+      activePeer: null,   // normalized handle of the chat on screen
+      peer: null,         // profile object for the chat on screen
+      messages: [],       // messages for the chat on screen
+      conversations: {},  // conversationKey -> { key, peerHandle, messages, unread, lastActivity }
       typingSentAt: 0
     };
+
+    const MAX_DM_MESSAGES_PER_CONVERSATION = 300;
+
+    /** Builds the same key the server uses, so both sides agree. */
+    function dmConversationKey(peerHandle) {
+      const me = normalizeDmHandle(appState.currentUser?.handle);
+      const peer = normalizeDmHandle(peerHandle);
+      return [me, peer].sort().join(':');
+    }
+
+    function getConversation(key) {
+      if (!directMessages.conversations[key]) {
+        const me = normalizeDmHandle(appState.currentUser?.handle);
+        directMessages.conversations[key] = {
+          key,
+          peerHandle: key.split(':').find((part) => part !== me) || '',
+          messages: [],
+          unread: 0,
+          lastActivity: 0,
+        };
+      }
+      return directMessages.conversations[key];
+    }
+
+    function conversationsStorageKey() {
+      const identity = (savedSession && (savedSession.email || savedSession.uid)) || 'guest';
+      return `neighborly_dm_${String(identity).toLowerCase()}`;
+    }
+
+    /** Mirrors conversations to localStorage so history survives a reload. */
+    function saveDmConversations() {
+      try {
+        const trimmed = {};
+        for (const [key, conversation] of Object.entries(directMessages.conversations)) {
+          trimmed[key] = {
+            ...conversation,
+            messages: (conversation.messages || []).slice(-MAX_DM_MESSAGES_PER_CONVERSATION),
+          };
+        }
+        localStorage.setItem(conversationsStorageKey(), JSON.stringify({ version: 1, conversations: trimmed }));
+      } catch (error) {
+        try {
+          // Over quota: keep the most recent chats, without attachments.
+          const trimmed = {};
+          for (const key of Object.keys(directMessages.conversations).slice(-10)) {
+            const conversation = directMessages.conversations[key];
+            trimmed[key] = {
+              ...conversation,
+              messages: (conversation.messages || [])
+                .slice(-50)
+                .map((message) => ({ ...message, attachment: null })),
+            };
+          }
+          localStorage.setItem(conversationsStorageKey(), JSON.stringify({ version: 1, conversations: trimmed }));
+        } catch {
+          console.warn('Could not save direct messages locally.', error);
+        }
+      }
+    }
+
+    function loadDmConversations() {
+      try {
+        const raw = localStorage.getItem(conversationsStorageKey());
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (!saved || saved.version !== 1 || !saved.conversations) return;
+        directMessages.conversations = saved.conversations;
+      } catch (error) {
+        console.warn('Could not restore direct messages.', error);
+      }
+    }
 
     function normalizeDmHandle(value) {
       return String(value || '').trim().replace(/^@/, '').toLowerCase();
@@ -7874,18 +7953,29 @@
       directMessages.peer =
         appState.friends.find((friend) => normalizeDmHandle(friend.handle) === peerHandle) ||
         { handle: peerHandle };
-      directMessages.messages = [];
+
+      // Show what we already have straight away — the cached history — so the
+      // chat is never blank while the server round trip completes.
+      const conversation = getConversation(dmConversationKey(peerHandle));
+      conversation.unread = 0;
+      directMessages.messages = conversation.messages;
       renderDirectMessage();
 
       if (appState.activeWorkspace !== 'dm') selectWorkspace('dm');
       document.getElementById('workspace-dm-flow')?.classList.remove('hidden');
       document.getElementById('desktop-dm-flow')?.classList.add('hidden');
+      renderDesktopDMList();
 
       socket.emit('dm:open', { to: peerHandle });
       const input = document.getElementById('dm-message-input');
       if (input) setTimeout(() => input.focus(), 50);
     }
 
+    /**
+     * Hides the conversation without discarding it. Messages stay in the
+     * conversation map and in localStorage, so reopening shows the full
+     * history again.
+     */
     function closeDirectMessage() {
       directMessages.activePeer = null;
       directMessages.peer = null;
@@ -7893,6 +7983,7 @@
       renderDirectMessage();
       document.getElementById('workspace-dm-flow')?.classList.remove('hidden');
       document.getElementById('desktop-dm-flow')?.classList.add('hidden');
+      saveDmConversations();
     }
 
     function sendDirectMessage(event) {
@@ -7928,18 +8019,82 @@
     }
 
     function handleDmHistory(payload = {}) {
+      const key = String(payload.conversationKey || '');
+      if (!key) return;
+
+      // Server history is the source of truth, but anything cached locally that
+      // the server has not seen yet is kept, so nothing can be lost in transit.
+      const conversation = getConversation(key);
+      const incoming = payload.messages || [];
+      const merged = incoming.slice();
+      for (const message of conversation.messages) {
+        if (!merged.some((existing) => existing.id === message.id)) merged.push(message);
+      }
+      merged.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+      conversation.messages = merged.slice(-MAX_DM_MESSAGES_PER_CONVERSATION);
+      conversation.lastActivity = merged.length
+        ? Date.parse(merged[merged.length - 1].createdAt) || Date.now()
+        : conversation.lastActivity;
+
       if (!isForActiveConversation(payload)) return;
       directMessages.peer = payload.peer || directMessages.peer;
-      directMessages.messages = payload.messages || [];
+      directMessages.messages = conversation.messages;
+      conversation.unread = 0;
       renderDirectMessage();
+      renderDesktopDMList();
+      saveDmConversations();
     }
 
     function handleDmMessage(payload = {}) {
-      if (!isForActiveConversation(payload)) return;
-      // The server echoes our own message back, so de-duplicate by id.
-      if (directMessages.messages.some((message) => message.id === payload.id)) return;
-      directMessages.messages.push(payload);
-      renderDirectMessage();
+      const key = String(payload.conversationKey || '');
+      if (!key) return;
+
+      // Store every incoming message, even for a chat that is not on screen.
+      // Dropping them here is what made messages "disappear".
+      const conversation = getConversation(key);
+      if (!conversation.messages.some((message) => message.id === payload.id)) {
+        conversation.messages.push(payload);
+        if (conversation.messages.length > MAX_DM_MESSAGES_PER_CONVERSATION) {
+          conversation.messages = conversation.messages.slice(-MAX_DM_MESSAGES_PER_CONVERSATION);
+        }
+        conversation.lastActivity = Date.parse(payload.createdAt) || Date.now();
+      }
+
+      const isActive = isForActiveConversation(payload);
+      if (!isActive) {
+        const fromMe = normalizeDmHandle(payload.sender) === normalizeDmHandle(appState.currentUser?.handle);
+        if (!fromMe) conversation.unread = (conversation.unread || 0) + 1;
+      }
+
+      if (isActive) {
+        directMessages.messages = conversation.messages;
+        conversation.unread = 0;
+        renderDirectMessage();
+      }
+
+      saveDmConversations();
+      renderDesktopDMList();
+      if (!isActive && conversation.unread) notifyNewDm(conversation);
+    }
+
+    /** Small toast when a message lands in a chat you are not viewing. */
+    function notifyNewDm(conversation) {
+      const last = conversation.messages[conversation.messages.length - 1];
+      if (!last) return;
+      const peer = appState.friends.find(
+        (friend) => normalizeDmHandle(friend.handle) === conversation.peerHandle
+      );
+      const who = peer?.name || `@${conversation.peerHandle}`;
+      const preview = String(last.text || '').slice(0, 60);
+      showFriendToast(`${who}: ${preview}`);
+    }
+
+    function handleDmUnreadClear(payload = {}) {
+      const key = String(payload.conversationKey || '');
+      if (!key) return;
+      const conversation = getConversation(key);
+      conversation.unread = 0;
+      renderDesktopDMList();
     }
 
     /**
@@ -8615,6 +8770,87 @@
       }
     }
 
+    /* =========================================================================
+       SERVER CHANNELS  (#general and friends)
+       ------------------------------------------------------------------------
+       Channels work exactly like direct messages: the client joins a room,
+       sends to it, receives everyone else's messages live, and reloads the
+       stored history when the channel is opened.
+       ========================================================================= */
+
+    function channelRoomKey(serverId, channelId) {
+      return `srv:${serverId || 'none'}:chan:${channelId || 'none'}`;
+    }
+
+    function messageStoreKey(serverId, channelId) {
+      return `${serverId}_${channelId}`;
+    }
+
+    /** Converts a stored/socket channel message into the shape the list uses. */
+    function toChannelMessage(raw, serverId, channelId) {
+      const created = raw.createdAt ? new Date(raw.createdAt) : new Date();
+      const isValid = !Number.isNaN(created.getTime());
+      return {
+        id: raw.id,
+        author: raw.author || 'Neighborly User',
+        avatar: raw.initials || String(raw.author || '?').slice(0, 2).toUpperCase(),
+        color: raw.color || raw.authorColor || '#7c6ff7',
+        avatarImage: raw.avatarImage || raw.authorAvatar || null,
+        text: raw.text || '',
+        timestamp: isValid
+          ? `Today at ${created.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+          : '',
+        ts: isValid ? created.getTime() : Date.now(),
+        attachment: raw.attachment || null,
+        replyTo: null,
+        reactions: {},
+        pinned: false,
+      };
+    }
+
+    function joinServerChannel(serverId, channelId) {
+      const socket = window.neighborlySocket;
+      if (!socket || !socket.connected) return;
+      socket.emit('join-channel', {
+        channel: channelRoomKey(serverId, channelId),
+        serverId,
+        channelId,
+      });
+    }
+
+    function handleChannelHistory(payload = {}) {
+      const serverId = appState.activeServerId;
+      const channelId = appState.activeChannelId;
+      if (!serverId || !channelId) return;
+      if (payload.channel !== channelRoomKey(serverId, channelId)) return;
+
+      const key = messageStoreKey(serverId, channelId);
+      const incoming = (payload.messages || []).map((raw) => toChannelMessage(raw, serverId, channelId));
+      const existing = appState.messages[key] || [];
+      // Keep anything only present locally (e.g. an attachment still uploading).
+      const merged = incoming.concat(existing.filter((m) => !incoming.some((i) => i.id === m.id)));
+      merged.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      appState.messages[key] = merged;
+      renderMessages();
+      scheduleWorkspaceSave();
+    }
+
+    function handleChannelMessage(payload = {}) {
+      const serverId = appState.activeServerId;
+      const channelId = appState.activeChannelId;
+      if (!serverId || !channelId) return;
+      if (payload.channel !== channelRoomKey(serverId, channelId)) return;
+
+      const key = messageStoreKey(serverId, channelId);
+      if (!appState.messages[key]) appState.messages[key] = [];
+      // The server echoes our own message back, so de-duplicate by id.
+      if (appState.messages[key].some((m) => m.id === payload.id)) return;
+
+      appState.messages[key].push(toChannelMessage(payload, serverId, channelId));
+      renderMessages();
+      scheduleWorkspaceSave();
+    }
+
     function selectChannel(channelId) {
       triggerFeedback(8);
       appState.activeChannelId = channelId;
@@ -8634,6 +8870,10 @@
           if (chatHash) chatHash.textContent = '#';
         }
       }
+
+      // Join the channel's room so its messages arrive live, and pull the
+      // stored history for anyone who opens it later.
+      joinServerChannel(appState.activeServerId, channelId);
 
       renderMessages();
       renderChatMemberList();
@@ -8967,11 +9207,35 @@
       if (!list) return;
       const query = (document.getElementById('desktop-dm-search-input')?.value || '').trim().toLowerCase();
       const contacts = appState.friends.filter(friend => !query || `${friend.name} ${friend.handle} ${friend.lastMessage || ''}`.toLowerCase().includes(query));
-      list.innerHTML = contacts.map(friend => `
-        <button class="desktop-dm-contact" onclick="openDirectMessage('${escapeFriendsText(String(friend.handle || '').toLowerCase())}')">
+      const withActivity = contacts
+        .map((friend) => {
+          const conversation = getConversation(dmConversationKey(friend.handle));
+          const last = conversation.messages[conversation.messages.length - 1];
+          return {
+            friend,
+            conversation,
+            preview: last
+              ? (normalizeDmHandle(last.sender) === normalizeDmHandle(appState.currentUser?.handle)
+                ? `You: ${last.text || 'Attachment'}`
+                : (last.text || 'Attachment'))
+              : '',
+            lastActivity: conversation.lastActivity || 0,
+          };
+        })
+        // Most recently active conversation first.
+        .sort((a, b) => b.lastActivity - a.lastActivity);
+
+      list.innerHTML = withActivity.map(({ friend, conversation, preview }) => {
+        const active = directMessages.activePeer === normalizeDmHandle(friend.handle);
+        const unread = conversation.unread || 0;
+        const subtitle = preview || (friend.online ? 'Online' : 'Offline');
+        return `
+        <button class="desktop-dm-contact${active ? ' selected' : ''}" onclick="openDirectMessage('${escapeFriendsText(String(friend.handle || '').toLowerCase())}')">
           <span class="desktop-dm-avatar" style="${avatarBgStyle(friend.color, friend.avatarImage)}">${avatarLabel(friend.initials, friend.avatarImage)}<i class="${friend.online ? 'online' : ''}"></i></span>
-          <span class="desktop-dm-contact-copy"><strong>${escapeFriendsText(friend.name)}</strong><small>${escapeFriendsText(friend.lastMessage || (friend.online ? 'Online' : 'Offline'))}</small></span>
-        </button>`).join('') || `<p class="friends-empty-state">${query ? 'No conversations found.' : 'No direct messages yet.'}</p>`;
+          <span class="desktop-dm-contact-copy"><strong>${escapeFriendsText(friend.name)}</strong><small>${escapeFriendsText(subtitle)}</small></span>
+          ${unread ? `<span class="desktop-dm-unread">${unread > 99 ? '99+' : unread}</span>` : ''}
+        </button>`;
+      }).join('') || `<p class="friends-empty-state">${query ? 'No conversations found.' : 'No direct messages yet.'}</p>`;
     }
 
     function renderFriendsHome() {
@@ -9922,6 +10186,22 @@
 
       cancelReply();
 
+      // Send to the server so other members receive it live and it is stored.
+      // `msgId` doubles as the client id, so the echo is de-duplicated instead
+      // of appearing twice.
+      const socket = window.neighborlySocket;
+      if (socket && socket.connected) {
+        socket.emit('chat:send', {
+          channel: channelRoomKey(activeSrvId, activeChanId),
+          serverId: activeSrvId,
+          channelId: activeChanId,
+          author: appState.currentUser.name,
+          text,
+          clientMessageId: msgId,
+          attachment: attachment ? { url: attachment.url, type: attachment.type, name: attachment.name } : null,
+        });
+      }
+
       if (input) input.value = '';
       appState.pendingAttachment = null;
       showAttachmentPreview();
@@ -9932,7 +10212,8 @@
       }
 
       renderMessages();
-      maybeSimulateReply(key, activeSrvId, activeChanId);
+      scheduleWorkspaceSave();
+      if (!socket || !socket.connected) maybeSimulateReply(key, activeSrvId, activeChanId);
 
       if (attachment) {
         simulateAttachmentUpload(key, msgId, attachment.url.length);
@@ -9986,7 +10267,11 @@
       "Interesting, tell me more."
     ];
 
+    /* Canned replies used while channels were a front-end prototype. Channels are
+       now delivered by the server, so replies come from real members; this is
+       kept only for the offline case where no socket is connected. */
     function maybeSimulateReply(key, srvId, chanId) {
+      if (window.neighborlySocket?.connected) return; // real people reply now
       if (typingIndicatorTimer) {
         clearTimeout(typingIndicatorTimer);
         typingIndicatorTimer = null;
@@ -11549,6 +11834,9 @@
         closeDirectMessage();
         showFriendToast('This conversation is closed — you are no longer friends.');
       });
+      socket.on('dm:unread-clear', handleDmUnreadClear);
+      socket.on('chat:message', handleChannelMessage);
+      socket.on('chat:history', handleChannelHistory);
       socket.on('profile:saved', (profile = {}) => {
         if (!profile.handle) return;
         // Adopt the server's copy so other tabs/devices converge on one truth.

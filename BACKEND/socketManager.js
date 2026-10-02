@@ -180,7 +180,7 @@ function createRealtimeStore(persistence) {
     return [...users.values()].filter((user) => user.online);
   }
 
-  function addMessage({ channel, author, text, attachment = null, clientMessageId = null }) {
+  function addMessage({ channel, author, text, attachment = null, clientMessageId = null, authorHandle = null, authorColor = null, authorAvatar = null }) {
     const normalizedChannel = channel || 'general';
     const message = {
       id: clientMessageId || `m-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -195,11 +195,40 @@ function createRealtimeStore(persistence) {
     const list = messagesByChannel.get(normalizedChannel) || [];
     list.push(message);
     messagesByChannel.set(normalizedChannel, list);
+
+    // Channel history is stored in the same table as DMs, keyed by the channel
+    // name, so server channels survive a restart just like private chats.
+    persist('appendChannelMessage', {
+      id: message.id,
+      channel,
+      author,
+      text: message.text,
+      attachment,
+      authorHandle,
+      authorColor,
+      authorAvatar,
+      createdAt: message.createdAt,
+    });
     return message;
   }
 
-  function getMessages(channel) {
-    return messagesByChannel.get(channel || 'general') || [];
+  async function getMessages(channel, limit = 100) {
+    const key = channel || 'general';
+    if (store && store.durable) {
+      const rows = await store.loadChannelMessages(key, limit);
+      return rows.map((row) => ({
+        id: row.id,
+        channel: row.channel || key,
+        author: row.author || 'Neighborly User',
+        text: row.text || '',
+        attachment: row.attachment || null,
+        createdAt: row.created_at || row.createdAt,
+        authorHandle: row.author_handle || row.authorHandle || null,
+        authorColor: row.author_color || row.authorColor || null,
+        authorAvatar: row.author_avatar || row.authorAvatar || null,
+      }));
+    }
+    return messagesByChannel.get(key) || [];
   }
 
   // --- Direct messages ------------------------------------------------------

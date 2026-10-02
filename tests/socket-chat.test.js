@@ -14,4 +14,14 @@ assert.strictEqual(store.getOnlineUsers()[0].name, 'Alice', 'First registered us
 
 const msg = store.addMessage({ channel: 'general', author: 'Alice', text: 'Hello everybody!' });
 assert.strictEqual(msg.text, 'Hello everybody!', 'Message should preserve text content');
-assert.strictEqual(store.getMessages('general').length, 1, 'One message should be stored for the channel');
+
+// getMessages reads from the durable store, so it is asynchronous.
+store.getMessages('general').then((messages) => {
+  assert.strictEqual(messages.length, 1, 'One message should be stored for the channel');
+  assert.strictEqual(messages[0].author, 'Alice', 'The stored message keeps its author');
+  assert.strictEqual(messages[0].channel, 'general', 'The stored message keeps its channel');
+  console.log('Socket chat store tests passed.');
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

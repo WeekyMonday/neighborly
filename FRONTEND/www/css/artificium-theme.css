@@ -1037,3 +1037,19 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
   font-weight: 800;
   letter-spacing: 0.08em;
 }
+/* === Unread badge on DM list rows ========================================= */
+.desktop-dm-unread {
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #5865f2;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}

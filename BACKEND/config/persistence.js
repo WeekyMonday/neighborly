@@ -26,6 +26,7 @@ const TABLES = {
   friends: "neighborly_friends",
   requests: "neighborly_requests",
   dmMessages: "neighborly_dm_messages",
+  channelMessages: "neighborly_channel_messages",
 };
 
 function normalizeHandle(value) {
@@ -53,6 +54,10 @@ function createMemoryPersistence() {
     async removeFriendship() {},
     async upsertRequest() {},
     async deleteRequest() {},
+    async appendChannelMessage() {},
+    async loadChannelMessages() {
+      return [];
+    },
     async appendDmMessage() {},
     async loadDmMessages() {
       return [];
@@ -77,7 +82,7 @@ function createFilePersistence(dataDir) {
 
   function read() {
     if (cache) return cache;
-    cache = { profiles: {}, friendships: [], requests: [], dmMessages: [] };
+    cache = { profiles: {}, friendships: [], requests: [], dmMessages: [], channelMessages: [] };
     try {
       if (fs.existsSync(stateFile)) {
         const parsed = JSON.parse(fs.readFileSync(stateFile, "utf8") || "{}");
@@ -86,6 +91,7 @@ function createFilePersistence(dataDir) {
           friendships: parsed.friendships || [],
           requests: parsed.requests || [],
           dmMessages: parsed.dmMessages || [],
+          channelMessages: parsed.channelMessages || [],
         };
       }
     } catch (error) {
@@ -178,10 +184,37 @@ function createFilePersistence(dataDir) {
       flush();
     },
 
+    async appendChannelMessage(message) {
+      const state = read();
+      state.channelMessages = state.channelMessages || [];
+      state.channelMessages.push({
+        id: message.id,
+        channel: message.channel,
+        author: message.author,
+        text: message.text,
+        attachment: message.attachment || null,
+        author_handle: message.authorHandle || null,
+        author_color: message.authorColor || null,
+        author_avatar: message.authorAvatar || null,
+        created_at: message.createdAt,
+      });
+      if (state.channelMessages.length > 5000) {
+        state.channelMessages = state.channelMessages.slice(-5000);
+      }
+      flush();
+    },
+
+    async loadChannelMessages(key, limit = 100) {
+      const state = read();
+      const all = state.channelMessages || [];
+      return all.filter((m) => m.channel === key).slice(-limit);
+    },
+
     async appendDmMessage(message) {
       const state = read();
       // Stored in the same snake_case shape Supabase returns, so
       // getDmMessages() maps rows identically for both backends.
+      state.dmMessages = state.dmMessages || [];
       state.dmMessages.push({
         id: message.id,
         conversation_key: message.conversationKey,
@@ -280,13 +313,44 @@ function createSupabasePersistence(createClient, url, serviceRoleKey, tables = T
       await guard("deleteRequest", client.from(tables.requests).delete().eq("id", id));
     },
 
+    async appendChannelMessage(message) {
+      await guard(
+        "appendChannelMessage",
+        client.from(tables.channelMessages).insert({
+          id: message.id,
+          channel: message.channel,
+          author: message.author,
+          text: message.text,
+          attachment: message.attachment || null,
+          author_handle: message.authorHandle || null,
+          author_color: message.authorColor || null,
+          author_avatar: message.authorAvatar || null,
+          created_at: message.createdAt,
+        })
+      );
+    },
+
+    async loadChannelMessages(key, limit = 100) {
+      const rows = await guard(
+        "loadChannelMessages",
+        client
+          .from(tables.channelMessages)
+          .select("*")
+          .eq("channel", key)
+          .order("created_at", { ascending: false })
+          .limit(limit),
+        []
+      );
+      return (rows || []).reverse();
+    },
+
     async appendDmMessage(message) {
       await guard(
         "appendDmMessage",
         client.from(tables.dmMessages).insert({
           id: message.id,
           conversation_key: message.conversationKey,
-          sender_key: message.senderKey,
+          sender_key: message.senderKey || message.sender,
           text: message.text,
           attachment: message.attachment || null,
           created_at: message.createdAt,

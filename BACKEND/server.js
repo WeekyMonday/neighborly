@@ -174,20 +174,26 @@ io.on("connection", (socket) => {
   });
 
 
-  socket.on("join-channel", (payload = {}) => {
+  socket.on("join-channel", async (payload = {}) => {
     const channel = payload.channel || "server-coffe_channel-update";
     socket.join(channel);
     socket.emit("joined-channel", { channel });
+    // Replay stored history so a channel opened later is never empty.
+    const history = await realtimeStore.getMessages(channel, 100);
+    socket.emit("chat:history", { channel, messages: history });
   });
 
   socket.on("chat:send", (payload = {}) => {
     const channel = payload.channel || "server-coffe_channel-update";
     const message = realtimeStore.addMessage({
       channel,
-      author: payload.author || "Neighborly User",
+      author: payload.author || socket.user?.name || "Neighborly User",
       text: payload.text || "",
       attachment: payload.attachment || null,
       clientMessageId: payload.clientMessageId || null,
+      authorHandle: socket.user?.handle || null,
+      authorColor: socket.user?.color || null,
+      authorAvatar: socket.user?.avatarImage || null,
     });
 
     io.to(channel).emit("chat:message", {
@@ -241,6 +247,23 @@ io.on("connection", (socket) => {
   // received by anyone else -- the sender is never trusted for the room name,
   // and non-friends cannot open a room at all.
 
+  /**
+   * Ensures both people are in the private room for a conversation.
+   *
+   * This is what makes a message arrive at someone who has *not* opened the
+   * conversation yet. Relying on `dm:open` alone means a message only reaches
+   * a recipient who happens to already be looking at that chat.
+   */
+  function ensureDmRoom(handleA, handleB) {
+    const room = realtimeStore.dmRoomKey(handleA, handleB);
+    for (const handle of [handleA, handleB]) {
+      const key = handleKey(handle);
+      const targets = socketsByHandle.get(key);
+      if (targets) for (const target of targets) target.join(room);
+    }
+    return room;
+  }
+
   function dmGuard(socket, payload = {}) {
     const fromHandle = socket.user?.handle;
     const toHandle = payload.to || payload.handle || "";
@@ -266,18 +289,18 @@ io.on("connection", (socket) => {
     const guard = dmGuard(socket, payload);
     if (!guard) return;
 
-    const room = realtimeStore.dmRoomKey(guard.fromHandle, guard.toHandle);
+    const room = ensureDmRoom(guard.fromHandle, guard.toHandle);
     socket.join(room);
-    // Keep the peer online too, so their open tab receives messages live.
-    const peerSockets = socketsByHandle.get(String(guard.toHandle).replace(/^@/, "").toLowerCase());
-    if (peerSockets) for (const peer of peerSockets) peer.join(room);
 
     const history = await realtimeStore.getDmMessages(guard.fromHandle, guard.toHandle, 100);
+    // Hand back anything that arrived since the client last opened this chat,
+    // so a conversation picked up later is never missing its tail.
     socket.emit("dm:history", {
       conversationKey: room,
       peer: realtimeStore.findProfile(guard.toHandle),
       messages: history,
     });
+    socket.emit("dm:unread-clear", { conversationKey: room });
   });
 
   socket.on("friend:remove", (payload = {}) => {
@@ -309,7 +332,7 @@ io.on("connection", (socket) => {
     const attachment = payload.attachment || null;
     if (!text && !attachment) return;
 
-    const room = realtimeStore.dmRoomKey(guard.fromHandle, guard.toHandle);
+    const room = ensureDmRoom(guard.fromHandle, guard.toHandle);
     const message = await realtimeStore.addDmMessage({
       from: guard.fromHandle,
       to: guard.toHandle,
@@ -326,7 +349,7 @@ io.on("connection", (socket) => {
   socket.on("dm:typing", (payload = {}) => {
     const guard = dmGuard(socket, payload);
     if (!guard) return;
-    const room = realtimeStore.dmRoomKey(guard.fromHandle, guard.toHandle);
+    const room = ensureDmRoom(guard.fromHandle, guard.toHandle);
     socket.to(room).emit("dm:typing", {
       conversationKey: room,
       from: guard.fromHandle,
