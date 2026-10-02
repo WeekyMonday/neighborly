@@ -857,6 +857,9 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  /* Without this the message list grows to fit its content and pushes the
+     composer (and its popups) out of the visible area. */
+  overflow: hidden;
   background: var(--discord-chatBg, #313338);
 }
 .dm-conversation.hidden { display: none; }
@@ -915,6 +918,7 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
 .dm-conversation-body {
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   align-items: stretch;
 }
@@ -922,6 +926,7 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }
@@ -1111,3 +1116,47 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
 .dm-conversation-main .composer-input-wrapper { margin: 0 16px 16px; }
 .dm-conversation-main .chat-reply-preview-bar { margin: 0 16px; }
 .dm-conversation-main .composer-attachment-preview { margin: 0 16px; }
+/* === DM composer popups: self-contained so nothing can clip them ==========
+   The DM screen is a flex column, so these are styled directly by id rather
+   than relying on the shared channel-composer rules.                        */
+#dm-conversation-screen .composer-plus-wrap,
+#dm-conversation-screen .composer-emoji-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+#dm-plus-menu,
+#dm-emoji-picker {
+  position: absolute;
+  bottom: 44px;
+  z-index: 200;
+  display: none;
+  background: #2b2d31;
+  border: 1px solid #1e1f22;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+  color: #dbdee1;
+}
+#dm-plus-menu { left: 0; min-width: 230px; flex-direction: column; gap: 2px; }
+#dm-plus-menu.open { display: flex; }
+#dm-plus-menu .composer-plus-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px; border-radius: 6px;
+  color: #dbdee1; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+#dm-plus-menu .composer-plus-menu-item:hover { background: rgba(255, 255, 255, 0.06); }
+#dm-plus-menu .composer-plus-menu-item svg { width: 17px; height: 17px; color: #b5bac1; }
+
+#dm-emoji-picker { right: 0; width: 264px; max-height: 220px; overflow-y: auto; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+#dm-emoji-picker.open { display: grid; }
+#dm-emoji-picker .composer-emoji-option {
+  font-size: 19px; text-align: center; padding: 5px 0; border-radius: 4px; cursor: pointer; line-height: 1.2;
+}
+#dm-emoji-picker .composer-emoji-option:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* Keep the popups above the scrolling message list. */
+.dm-conversation-main .dm-message-list { position: relative; z-index: 1; }
+.dm-conversation-main .composer-input-wrapper { position: relative; z-index: 5; }

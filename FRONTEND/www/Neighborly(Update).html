@@ -8085,8 +8085,10 @@
       triggerFeedback(8);
       const menu = document.getElementById('dm-plus-menu');
       const picker = document.getElementById('dm-emoji-picker');
+      if (!menu) return;
+      // Only one popup at a time.
       if (picker) picker.classList.remove('open');
-      if (menu) menu.classList.toggle('open');
+      menu.classList.toggle('open');
     }
 
     function triggerDirectMediaUpload() {
@@ -8161,14 +8163,15 @@
       triggerFeedback(8);
       const picker = document.getElementById('dm-emoji-picker');
       const menu = document.getElementById('dm-plus-menu');
-      if (menu) menu.classList.remove('open');
       if (!picker) return;
+      if (menu) menu.classList.remove('open');
 
-      if (!picker.dataset.built) {
-        picker.innerHTML = quickEmojiSet
+      // Rebuild whenever the grid is empty, not just the first time, so the
+      // picker can never open as an empty box.
+      if (!picker.childElementCount) {
+        picker.innerHTML = (typeof quickEmojiSet !== 'undefined' ? quickEmojiSet : [])
           .map((emoji) => `<div class="composer-emoji-option" onclick="insertEmoji('${emoji}', 'dm-message-input'); toggleDirectEmojiPicker();">${emoji}</div>`)
           .join('');
-        picker.dataset.built = '1';
       }
       picker.classList.toggle('open');
     }

@@ -59,6 +59,57 @@ scripts.forEach((body, index) => {
   }
 });
 
+// ---- direct message composer wiring --------------------------------------
+// The DM composer reuses the channel composer's classes, so its popups are easy
+// to break by renaming an id or dropping a handler. Assert the wiring exists.
+const REQUIRED_DM_IDS = [
+  'dm-conversation-screen',
+  'dm-plus-menu',
+  'dm-emoji-picker',
+  'dm-media-input',
+  'dm-message-input',
+  'dm-reply-preview-bar',
+  'dm-attachment-preview',
+];
+const missingIds = REQUIRED_DM_IDS.filter((id) => !html.includes(`id="${id}"`));
+if (missingIds.length) {
+  console.log(`FAIL dm composer is missing: ${missingIds.join(', ')}`);
+  failures++;
+} else {
+  console.log(`PASS dm composer has all ${REQUIRED_DM_IDS.length} required elements`);
+}
+
+const REQUIRED_DM_FNS = [
+  'toggleDirectPlusMenu',
+  'toggleDirectEmojiPicker',
+  'triggerDirectMediaUpload',
+  'handleDirectFileSelect',
+  'startDirectReply',
+  'cancelDirectReply',
+  'insertEmoji',
+];
+const missingFns = REQUIRED_DM_FNS.filter((name) => !new RegExp(`function ${name}\\s*\\(`).test(html));
+if (missingFns.length) {
+  console.log(`FAIL dm composer is missing handlers: ${missingFns.join(', ')}`);
+  failures++;
+} else {
+  console.log(`PASS dm composer handlers are all defined (${REQUIRED_DM_FNS.length})`);
+}
+
+// The popups must be styled by id, otherwise they can be clipped by the
+// conversation's overflow rules.
+for (const id of ['#dm-plus-menu', '#dm-emoji-picker']) {
+  if (!css.includes(id)) {
+    console.log(`FAIL css has no rule for ${id}`);
+    failures++;
+  }
+}
+if (!css.includes('#dm-plus-menu') || !css.includes('#dm-emoji-picker')) {
+  console.log('FAIL dm composer popups are not styled');
+} else {
+  console.log('PASS dm composer popups have dedicated styles');
+}
+
 if (failures) {
   console.log(`\n${failures} problem(s) found.`);
   process.exit(1);
