@@ -59,6 +59,7 @@ function createMemoryPersistence() {
       return [];
     },
     async appendDmMessage() {},
+    async deleteDmMessage() {},
     async loadDmMessages() {
       return [];
     },
@@ -221,10 +222,19 @@ function createFilePersistence(dataDir) {
         sender_key: message.senderKey || message.sender,
         text: message.text,
         attachment: message.attachment || null,
+        reply_to: message.replyTo || null,
         created_at: message.createdAt,
       });
       // Keep the tail bounded so the file cannot grow without limit.
       if (state.dmMessages.length > 5000) state.dmMessages = state.dmMessages.slice(-5000);
+      flush();
+    },
+
+    async deleteDmMessage(key, messageId) {
+      const state = read();
+      state.dmMessages = (state.dmMessages || []).filter(
+        (m) => !(m.conversation_key === key && m.id === messageId)
+      );
       flush();
     },
 
@@ -353,8 +363,20 @@ function createSupabasePersistence(createClient, url, serviceRoleKey, tables = T
           sender_key: message.senderKey || message.sender,
           text: message.text,
           attachment: message.attachment || null,
+          reply_to: message.replyTo || null,
           created_at: message.createdAt,
         })
+      );
+    },
+
+    async deleteDmMessage(key, messageId) {
+      await guard(
+        "deleteDmMessage",
+        client
+          .from(tables.dmMessages)
+          .delete()
+          .eq("conversation_key", key)
+          .eq("id", messageId)
       );
     },
 

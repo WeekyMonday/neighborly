@@ -1053,3 +1053,61 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
   font-weight: 700;
   line-height: 1;
 }
+/* === DM extras: reply quotes, hover actions, links ======================== */
+.dm-message { position: relative; }
+
+.dm-reply-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border-left: 3px solid #5865f2;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  max-width: 100%;
+}
+.dm-reply-quote b { color: #dbdee1; font-size: 11px; font-weight: 700; }
+.dm-reply-quote span {
+  color: #949ba4;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-message.mine .dm-reply-quote { border-left-color: #f2f3f5; }
+
+.dm-text-link { color: #00a8fc; text-decoration: none; }
+.dm-text-link:hover { text-decoration: underline; }
+
+.dm-message-actions {
+  position: absolute;
+  top: -10px;
+  right: 0;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: #303338;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 2;
+}
+.dm-message.theirs .dm-message-actions { right: auto; left: 0; }
+.dm-message:hover .dm-message-actions { opacity: 1; pointer-events: auto; }
+.dm-message-actions button {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border: 0; border-radius: 4px;
+  background: transparent; color: #b5bac1; cursor: pointer;
+}
+.dm-message-actions button:hover { background: #404249; color: #f2f3f5; }
+.dm-message-actions svg { width: 15px; height: 15px; }
+
+/* The DM composer reuses the channel composer's classes, so it only needs
+   to sit correctly inside the conversation column. */
+.dm-conversation-main .composer-input-wrapper { margin: 0 16px 16px; }
+.dm-conversation-main .chat-reply-preview-bar { margin: 0 16px; }
+.dm-conversation-main .composer-attachment-preview { margin: 0 16px; }

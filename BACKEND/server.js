@@ -338,12 +338,23 @@ io.on("connection", (socket) => {
       to: guard.toHandle,
       text,
       attachment,
+      replyTo: payload.replyTo || null,
       clientMessageId: payload.clientMessageId || null,
     });
     if (!message) return;
 
     // Room-only emit: never io.emit, so this stays private to the pair.
     io.to(room).emit("dm:message", message);
+  });
+
+  socket.on("dm:delete", (payload = {}) => {
+    const guard = dmGuard(socket, payload);
+    if (!guard) return;
+
+    const room = ensureDmRoom(guard.fromHandle, guard.toHandle);
+    realtimeStore.deleteDmMessage(guard.fromHandle, guard.toHandle, payload.messageId);
+    // Everyone in the conversation drops it, so sender and recipient agree.
+    io.to(room).emit("dm:deleted", { conversationKey: room, messageId: payload.messageId });
   });
 
   socket.on("dm:typing", (payload = {}) => {

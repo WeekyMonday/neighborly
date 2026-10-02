@@ -137,7 +137,69 @@ async function main() {
     bob.emit('dm:open', { to: 'alice' });
     assert.strictEqual((await cleared).conversationKey, 'alice:bob', 'Opening clears the unread flag');
 
-    // ---- 3. Server channel chat works like a DM ----
+    // ---- 3. DM feature parity with #general: media, replies, deletes ----
+    const PHOTO = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const VIDEO = { url: 'data:video/mp4;base64,AAAA', type: 'video', name: 'clip.mp4' };
+
+    // A photo/GIF.
+    const bobGetsPhoto = waitForEvent(bob, 'dm:message');
+    alice.emit('dm:send', {
+      to: 'bob', text: '', clientMessageId: 'dm-photo',
+      attachment: { url: PHOTO, type: 'image', name: 'sticker.gif' },
+    });
+    const photo = await bobGetsPhoto;
+    assert.ok(photo.attachment, 'A photo/GIF is delivered to the recipient');
+    assert.strictEqual(photo.attachment.type, 'image', 'The attachment keeps its type');
+    assert.strictEqual(photo.text, '', 'A media-only message can have no text');
+
+    // A video.
+    const bobGetsVideo = waitForEvent(bob, 'dm:message');
+    alice.emit('dm:send', {
+      to: 'bob', text: 'look', clientMessageId: 'dm-video', attachment: VIDEO,
+    });
+    const video = await bobGetsVideo;
+    assert.strictEqual(video.attachment.type, 'video', 'A video is delivered');
+    assert.strictEqual(video.attachment.name, 'clip.mp4', 'The video keeps its filename');
+
+    // A reply quoting an earlier message.
+    const bobGetsReply = waitForEvent(bob, 'dm:message');
+    alice.emit('dm:send', {
+      to: 'bob', text: 'agreed', clientMessageId: 'dm-reply',
+      replyTo: { msgId: 'dm-photo', author: 'Bob', text: 'nice' },
+    });
+    const reply = await bobGetsReply;
+    assert.ok(reply.replyTo, 'The reply reference is delivered');
+    assert.strictEqual(reply.replyTo.author, 'Bob', 'The reply names who was replied to');
+    assert.strictEqual(reply.replyTo.text, 'nice', 'The reply keeps the quoted text');
+
+    // History keeps the media and the reply after a reload.
+    const afterFeatures = waitForEvent(bob, 'dm:history');
+    bob.emit('dm:open', { to: 'alice' });
+    const featureHistory = await afterFeatures;
+    const photoMessage = featureHistory.messages.find((m) => m.id === 'dm-photo');
+    assert.ok(photoMessage && photoMessage.attachment, 'Attachments survive in history');
+    const replyMessage = featureHistory.messages.find((m) => m.id === 'dm-reply');
+    assert.ok(replyMessage && replyMessage.replyTo, 'Replies survive in history');
+
+    // Deleting a message removes it for both people.
+    const bobSawDelete = waitForEvent(bob, 'dm:deleted');
+    alice.emit('dm:delete', { to: 'bob', messageId: 'dm-photo' });
+    const deleted = await bobSawDelete;
+    assert.strictEqual(deleted.messageId, 'dm-photo', 'The delete is broadcast to the pair');
+    assert.strictEqual(deleted.conversationKey, 'alice:bob', 'The delete names the conversation');
+
+    // A third party still cannot see any of it.
+    const eve = createClient(url, { transports: ['websocket'] });
+    clients.push(eve);
+    await waitForEvent(eve, 'connect');
+    await register(eve, { id: 'e1', name: 'Eve', handle: 'eve', email: 'eve@example.com' });
+    let leaked = false;
+    eve.on('dm:message', () => { leaked = true; });
+    alice.emit('dm:send', { to: 'bob', text: 'still private', clientMessageId: 'dm-priv' });
+    await pause(300);
+    assert.strictEqual(leaked, false, 'A non-friend never receives any of this');
+
+    // ---- 4. Server channel chat works like a DM ----
     const CHANNEL = 'srv:server-1:chan:general';
     const joined = waitForEvent(alice, 'chat:history');
     alice.emit('join-channel', { channel: CHANNEL, serverId: 'server-1', channelId: 'general' });

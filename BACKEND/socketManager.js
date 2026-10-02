@@ -239,7 +239,7 @@ function createRealtimeStore(persistence) {
     return [normalizeHandle(handleA), normalizeHandle(handleB)].sort().join(':');
   }
 
-  async function addDmMessage({ from, to, text, attachment = null, clientMessageId = null }) {
+  async function addDmMessage({ from, to, text, attachment = null, clientMessageId = null, replyTo = null }) {
     const senderKey = normalizeHandle(from);
     const recipientKey = normalizeHandle(to);
     if (!senderKey || !recipientKey) return null;
@@ -252,10 +252,24 @@ function createRealtimeStore(persistence) {
       recipient: recipientKey,
       text: String(text || '').trim().slice(0, 4000),
       attachment,
+      replyTo: replyTo && typeof replyTo === 'object'
+        ? {
+            msgId: String(replyTo.msgId || '').slice(0, 120),
+            author: String(replyTo.author || 'Unknown').slice(0, 80),
+            text: String(replyTo.text || '').slice(0, 200),
+          }
+        : null,
       createdAt: new Date().toISOString(),
     };
     persist('appendDmMessage', message);
     return message;
+  }
+
+  /** Deletes a DM from both participants' stored history. */
+  function deleteDmMessage(handleA, handleB, messageId) {
+    const key = dmRoomKey(handleA, handleB);
+    if (store && store.durable) persist('deleteDmMessage', key, messageId);
+    return key;
   }
 
   async function getDmMessages(handleA, handleB, limit = 100) {
@@ -268,6 +282,7 @@ function createRealtimeStore(persistence) {
         sender: row.senderKey || row.sender_key || row.sender,
         text: row.text || '',
         attachment: row.attachment || null,
+        replyTo: row.replyTo || row.reply_to || null,
         createdAt: row.created_at || row.createdAt,
       }));
     }
@@ -469,6 +484,7 @@ function createRealtimeStore(persistence) {
     getMessages,
     addDmMessage,
     getDmMessages,
+    deleteDmMessage,
     dmRoomKey,
     findProfile,
     getFriendState,
