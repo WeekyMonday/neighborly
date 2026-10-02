@@ -110,6 +110,49 @@ if (!css.includes('#dm-plus-menu') || !css.includes('#dm-emoji-picker')) {
   console.log('PASS dm composer popups have dedicated styles');
 }
 
+// ---- voice call wiring -----------------------------------------------------
+// The echo/freeze bugs came from rebuilding media elements, so assert the
+// reconciling helpers exist and the old wholesale rebuild is gone.
+const REQUIRED_VOICE_FNS = [
+  'createCallTile',
+  'updateCallTile',
+  'callAudioFor',
+  'pruneCallAudio',
+  'resetCallMedia',
+  'renderVoiceParticipantRows',
+];
+const missingVoice = REQUIRED_VOICE_FNS.filter((name) => !new RegExp(`function ${name}\\s*\\(`).test(html));
+if (missingVoice.length) {
+  console.log(`FAIL voice helpers are missing: ${missingVoice.join(', ')}`);
+  failures++;
+} else {
+  console.log(`PASS voice helpers are all defined (${REQUIRED_VOICE_FNS.length})`);
+}
+
+if (/grid\.replaceChildren\(\)/.test(html)) {
+  console.log('FAIL the call grid still rebuilds itself from scratch');
+  failures++;
+} else {
+  console.log('PASS the call grid reconciles tiles instead of rebuilding');
+}
+
+// The local preview must never carry the mic, or it echoes.
+const client = fs.readFileSync(path.join(ROOT, 'FRONTEND/www/js/webrtcClient.js'), 'utf8');
+const previewFn = client.match(/function getLocalPreviewStream\(\)\s*\{[\s\S]*?\n  \}/)?.[0] || '';
+if (/localAudioStream/.test(previewFn)) {
+  console.log('FAIL the local preview stream still includes the microphone track');
+  failures++;
+} else {
+  console.log('PASS the local preview stream is video-only (no mic feedback)');
+}
+
+if (!/echoCancellation/.test(client)) {
+  console.log('FAIL echo cancellation is not requested');
+  failures++;
+} else {
+  console.log('PASS echo cancellation is requested explicitly');
+}
+
 if (failures) {
   console.log(`\n${failures} problem(s) found.`);
   process.exit(1);

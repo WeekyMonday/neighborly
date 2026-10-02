@@ -157,7 +157,15 @@ window.WebRTCClient = (() => {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access is not available in this browser.');
 
     localAudioStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      // Echo cancellation is what stops hearing yourself through the speakers,
+      // so it is requested explicitly (some devices ignore the default) and
+      // pinned to mono, which removes most of the remaining feedback loop.
+      audio: {
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true },
+        channelCount: { ideal: 1 },
+      },
       video: false
     });
     localAudioStream.getAudioTracks().forEach((track) => { track.enabled = !muted; });
@@ -165,11 +173,17 @@ window.WebRTCClient = (() => {
     return localAudioStream;
   }
 
+  /**
+   * The local preview stream is VIDEO ONLY.
+   *
+   * It exists purely to draw your own camera tile. Including the microphone
+   * track here meant any element that ever rendered it unmuted would play your
+   * mic back into the room and be picked up again — the echo that got worse
+   * the longer the call ran. The audio track is sent over the peer connection
+   * instead, never through a preview element.
+   */
   function getLocalPreviewStream() {
-    const tracks = [
-      ...(localAudioStream?.getAudioTracks() || []),
-      ...(screenStream?.getVideoTracks() || cameraStream?.getVideoTracks() || [])
-    ];
+    const tracks = screenStream?.getVideoTracks() || cameraStream?.getVideoTracks() || [];
     return new MediaStream(tracks);
   }
 
@@ -300,9 +314,9 @@ window.WebRTCClient = (() => {
       track = localAudioStream?.getAudioTracks()[0];
       if (track) {
         await Promise.all(Array.from(peerConnections.values()).map((pc) => {
-          const transceiver = pc.getTransceivers().find((item) => item.receiver.track?.kind === 'audio');
-          return transceiver ? transceiver.sender.replaceTrack(track) : Promise.resolve();
-        }));
+        const transceiver = findAudioTransceiver(pc);
+        return transceiver ? transceiver.sender.replaceTrack(track) : Promise.resolve();
+      }));
       }
     }
     localAudioStream?.getAudioTracks().forEach((item) => { item.enabled = !muted; });
@@ -327,12 +341,74 @@ window.WebRTCClient = (() => {
     try { await sender.setParameters(parameters); } catch { /* Some browsers lock display-capture encoding controls. */ }
   }
 
+  /**
+   * Finds the video transceiver on a connection.
+   *
+   * Matching only on `receiver.track.kind` fails before negotiation in some
+   * browsers, which is why turning the camera on appeared to do nothing: the
+   * track was never attached to a sender. Try both ends, then the sender list.
+   */
+  function findVideoTransceiver(pc) {
+    const transceivers = pc.getTransceivers();
+    const match = transceivers.find(
+      (item) => item.receiver?.track?.kind === 'video' || item.sender?.track?.kind === 'video'
+    );
+    if (match) return match;
+    const direction = transceivers.find((item) => item.direction?.includes('video'));
+    if (direction) return direction;
+    // Last resort: rebuild the transceiver list from the senders.
+    return transceivers.find((item) => pc.getSenders().includes(item.sender) && item.sender.track?.kind === 'video') || null;
+  }
+
+  function findAudioTransceiver(pc) {
+    const transceivers = pc.getTransceivers();
+    return (
+      transceivers.find((item) => item.receiver?.track?.kind === 'audio' || item.sender?.track?.kind === 'audio') ||
+      null
+    );
+  }
+
+  /**
+   * Keeps the outgoing video sender alive.
+   *
+   * Without an explicit degradation preference and bitrate cap, browsers can
+   * stall a video track instead of scaling it down, which shows up as a frozen
+   * picture rather than a dropped one.
+   */
+  async function tuneVideoSender(sender, track, preset) {
+    if (!sender) return;
+    if (track) {
+      // 'motion' for camera (drops frames under pressure), 'detail' for text.
+      if ('contentHint' in track) track.contentHint = preset ? 'detail' : 'motion';
+    }
+    if (!sender.getParameters || !sender.setParameters) return;
+    try {
+      const parameters = sender.getParameters();
+      parameters.degradationPreference = 'balanced';
+      if (parameters.encodings?.length) {
+        parameters.encodings[0].degradationPreference = 'balanced';
+        // Cap the camera so a weak uplink downscales instead of freezing.
+        parameters.encodings[0].maxBitrate = preset
+          ? preset.maxBitrate
+          : Math.min(parameters.encodings[0].maxBitrate || Infinity, 1200000);
+        parameters.encodings[0].maxFramerate = preset ? preset.fps : 30;
+      }
+      await sender.setParameters(parameters);
+    } catch { /* Encoding parameters are best-effort across browsers. */ }
+  }
+
   async function replaceOutgoingVideoTrack(track) {
+    const preset = track && screenStream ? sharePresets[callbacks.quality || '720p30'] : null;
     await Promise.all(Array.from(peerConnections.values()).map(async (pc) => {
-      const transceiver = pc.getTransceivers().find((item) => item.receiver.track?.kind === 'video');
+      const transceiver = findVideoTransceiver(pc);
       if (!transceiver) return;
+      // A transceiver can end up send-only after renegotiation, which silently
+      // stops the camera reaching the other person.
+      if (!String(transceiver.direction || '').includes('send')) {
+        try { transceiver.direction = 'sendrecv'; } catch { /* Some browsers lock this. */ }
+      }
       await transceiver.sender.replaceTrack(track || null);
-      if (track && screenStream) await applyShareBitrate(transceiver.sender, sharePresets[callbacks.quality || '720p30']);
+      await tuneVideoSender(transceiver.sender, track, preset);
     }));
     if (callbacks.onLocalStream) callbacks.onLocalStream(getLocalPreviewStream());
   }

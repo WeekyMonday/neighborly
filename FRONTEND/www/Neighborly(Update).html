@@ -8733,10 +8733,11 @@
               <div class="voice-member-row" onclick="event.stopPropagation(); openMemberProfile(appState.currentUser.name);">
                 <div class="voice-member-left">
                   <div class="voice-member-avatar" style="${avatarBgStyle(appState.currentUser.color, appState.currentUser.avatarImage)}">${avatarLabel(appState.currentUser.initials, appState.currentUser.avatarImage)}</div>
-                  <span class="voice-member-name">${appState.currentUser.name}</span>
+                  <span class="voice-member-name">${escapeFriendsText(appState.currentUser.name)} (you)</span>
                 </div>
                 ${muteIconSvg || '<span class="voice-member-live-dot" title="Microphone on" aria-label="Microphone on"></span>'}
               </div>
+              ${renderVoiceParticipantRows()}
               <div class="voice-invite-row" onclick="event.stopPropagation(); mockInviteToVoice();">
                 <div class="voice-invite-row-left">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>
@@ -8749,6 +8750,33 @@
           }
         });
       }
+    }
+
+    /*
+     * Rows for everyone else in the voice channel.
+     *
+     * The list used to show only you, so on a phone — where the channel list
+     * is what you actually see — a friend who had joined was invisible even
+     * though they were in the call.
+     */
+    function renderVoiceParticipantRows() {
+      const participants = (appState.voiceParticipants || []).filter(Boolean);
+      if (!participants.length) {
+        return '<div class="voice-empty-hint">Nobody else is here yet.</div>';
+      }
+      return participants.map((participant) => {
+        const name = participant.name || 'Neighborly User';
+        const muted = !!participant.micMuted;
+        return `
+          <div class="voice-member-row" data-voice-peer="${escapeFriendsText(String(participant.id))}" onclick="event.stopPropagation(); openMemberProfile('${escapeFriendsText(name)}');">
+            <div class="voice-member-left">
+              <div class="voice-member-avatar" style="${avatarBgStyle(participant.color, participant.avatarImage)}">${avatarLabel(participant.initials, participant.avatarImage)}</div>
+              <span class="voice-member-name">${escapeFriendsText(name)}</span>
+            </div>
+            ${muted ? '<span class="voice-member-mute-icon-inline" title="Muted">🔇</span>' : '<span class="voice-member-live-dot" title="Microphone on" aria-label="Microphone on"></span>'}
+            ${participant.cameraEnabled ? '<span class="voice-member-camera-on" title="Camera on">🎥</span>' : ''}
+          </div>`;
+      }).join('');
     }
 
     /* Displays just the clock time — "Today at 6:52 AM" becomes "6:52 AM" —
@@ -9366,15 +9394,23 @@
           onNotice: showCallStatus,
           onParticipants: (participants) => {
             appState.voiceParticipants = participants;
+            // The channel list shows who is in the room, so it has to be
+            // repainted whenever that changes — this is what the phone shows.
+            renderChannels();
             renderCallGrid();
           },
           onRemoteStream: (peerId, stream) => {
             appState.callRemoteStreams[peerId] = stream;
             renderCallGrid();
           },
+          onPeerJoined: () => {
+            renderChannels();
+            renderCallGrid();
+          },
           onPeerLeft: (peerId) => {
             delete appState.callRemoteStreams[peerId];
             appState.voiceParticipants = appState.voiceParticipants.filter((peer) => peer.id !== peerId);
+            renderChannels();
             renderCallGrid();
           },
           onLocalStream: () => renderCallGrid(),
@@ -9409,6 +9445,9 @@
       appState.callRemoteStreams = {};
       appState.cameraEnabled = false;
       appState.screenSharing = false;
+      // Stop every audio element, or the last call keeps playing in the
+      // background and feeds back into the next one.
+      resetCallMedia();
 
       if (window.WebRTCClient) await window.WebRTCClient.leaveVoiceChannel();
 
@@ -9793,6 +9832,59 @@
       openAddFriendPage();
     }
 
+    /*
+     * The call grid is RECONCILED, never rebuilt from scratch.
+     *
+     * Rebuilding it on every state change used to recreate each <video> and
+     * <audio> element, which restarted decoding (the "frozen camera") and left
+     * orphaned <audio> elements still playing the same stream (the echo that
+     * got worse over time). Tiles and audio elements are now kept per peer and
+     * only updated when their stream actually changes.
+     */
+    const callTiles = new Map();   // participant id -> tile parts
+    const callAudio = new Map();   // peer id -> <audio>
+
+    /** Returns the one <audio> for a peer, creating it at most once. */
+    function callAudioFor(peerId, stream) {
+      let audio = callAudio.get(peerId);
+      if (!audio) {
+        audio = document.createElement('audio');
+        audio.className = 'call-tile-audio';
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.setAttribute('data-peer-id', peerId);
+        callAudio.set(peerId, audio);
+        document.body.appendChild(audio);
+      }
+      audio.muted = !!appState.currentUser.deafened;
+      if (audio.srcObject !== stream) {
+        audio.srcObject = stream;
+        audio.play().catch(() => showCallStatus('Tap the call screen once to enable incoming audio.', true));
+      }
+      return audio;
+    }
+
+    /** Stops and removes audio for peers who have left. */
+    function pruneCallAudio(activeIds) {
+      callAudio.forEach((audio, peerId) => {
+        if (activeIds.has(peerId)) return;
+        audio.pause();
+        audio.srcObject = null;
+        audio.remove();
+        callAudio.delete(peerId);
+      });
+    }
+
+    function resetCallMedia() {
+      callAudio.forEach((audio) => {
+        audio.pause();
+        audio.srcObject = null;
+        audio.remove();
+      });
+      callAudio.clear();
+      callTiles.clear();
+    }
+
     function renderCallGrid() {
       const grid = document.getElementById('call-grid');
       if (!grid) return;
@@ -9814,57 +9906,85 @@
         isSelf: false
       }))];
 
-      grid.replaceChildren();
-      participants.forEach((participant) => {
-        const tile = document.createElement('div');
-        tile.className = 'call-tile';
-        tile.style.backgroundColor = participant.isSelf ? '#242735' : '#303440';
-        if (participant.isSelf) tile.id = 'call-tile-self';
-
-        const video = document.createElement('video');
-        video.className = 'call-tile-video';
-        video.autoplay = true;
-        video.playsInline = true;
-        video.muted = true;
-        if (participant.stream) video.srcObject = participant.stream;
-        const hasVideo = !!participant.stream?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled);
-        tile.classList.toggle('has-video', hasVideo);
-        if (participant.screenSharing) video.classList.add('screen-share-video');
-
-        const avatar = document.createElement('div');
-        avatar.className = 'call-tile-avatar';
-        avatar.style.cssText = avatarBgStyle(participant.color, participant.avatarImage);
-        avatar.innerHTML = avatarLabel(participant.initials, participant.avatarImage);
-
-        const namePill = document.createElement('div');
-        namePill.className = 'call-tile-name-pill';
-        const muteIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        muteIcon.setAttribute('viewBox', '0 0 24 24');
-        muteIcon.setAttribute('fill', 'none');
-        muteIcon.setAttribute('stroke', 'currentColor');
-        muteIcon.setAttribute('stroke-width', '2.5');
-        muteIcon.style.display = participant.micMuted ? 'inline' : 'none';
-        if (participant.isSelf) muteIcon.id = 'call-tile-self-mute-icon';
-        muteIcon.innerHTML = '<line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>';
-        const name = document.createElement('span');
-        name.textContent = participant.name || 'Neighborly User';
-        namePill.append(muteIcon, name);
-
-        if (!participant.isSelf && participant.stream) {
-          const remoteAudio = document.createElement('audio');
-          remoteAudio.className = 'call-tile-audio';
-          remoteAudio.autoplay = true;
-          remoteAudio.playsInline = true;
-          remoteAudio.muted = appState.currentUser.deafened;
-          remoteAudio.srcObject = participant.stream;
-          remoteAudio.play().catch(() => showCallStatus('Tap the call screen once to enable incoming audio.', true));
-          tile.appendChild(remoteAudio);
-        }
-
-        tile.append(video, avatar, namePill);
-        grid.appendChild(tile);
-        if (participant.stream) video.play().catch(() => {});
+      const activeIds = new Set(participants.map((item) => String(item.id)));
+      callTiles.forEach((entry, id) => {
+        if (activeIds.has(id)) return;
+        entry.tile.remove();
+        callTiles.delete(id);
       });
+      pruneCallAudio(new Set(appState.voiceParticipants.map((item) => String(item.id))));
+
+      participants.forEach((participant) => {
+        const id = String(participant.id);
+        let entry = callTiles.get(id);
+        if (!entry) entry = createCallTile(id, participant, grid);
+        updateCallTile(entry, participant);
+        if (!participant.isSelf && participant.stream) callAudioFor(id, participant.stream);
+      });
+    }
+
+    /** Builds a call tile once; it is then reused for the rest of the call. */
+    function createCallTile(id, participant, grid) {
+      const tile = document.createElement('div');
+      tile.className = 'call-tile';
+      tile.style.backgroundColor = participant.isSelf ? '#242735' : '#303440';
+      tile.dataset.peerId = id;
+      if (participant.isSelf) tile.id = 'call-tile-self';
+
+      const video = document.createElement('video');
+      video.className = 'call-tile-video';
+      video.autoplay = true;
+      video.playsInline = true;
+      // Your own tile must never be audible, or the mic feeds the speakers.
+      video.muted = true;
+
+      const avatar = document.createElement('div');
+      avatar.className = 'call-tile-avatar';
+
+      const namePill = document.createElement('div');
+      namePill.className = 'call-tile-name-pill';
+      const muteIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      muteIcon.setAttribute('viewBox', '0 0 24 24');
+      muteIcon.setAttribute('fill', 'none');
+      muteIcon.setAttribute('stroke', 'currentColor');
+      muteIcon.setAttribute('stroke-width', '2.5');
+      if (participant.isSelf) muteIcon.id = 'call-tile-self-mute-icon';
+      muteIcon.innerHTML = '<line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>';
+      const name = document.createElement('span');
+      namePill.append(muteIcon, name);
+
+      tile.append(video, avatar, namePill);
+      grid.appendChild(tile);
+
+      const entry = { tile, video, avatar, namePill, muteIcon, name };
+      callTiles.set(id, entry);
+      return entry;
+    }
+
+    /** Updates an existing tile in place — never re-creates its elements. */
+    function updateCallTile(entry, participant) {
+      // Only re-assign the stream when it really changed: reassigning it
+      // restarts the decoder and is what made the picture freeze.
+      if (participant.stream && entry.video.srcObject !== participant.stream) {
+        entry.video.srcObject = participant.stream;
+        entry.video.play().catch(() => {});
+      }
+      if (!participant.stream && entry.video.srcObject) {
+        entry.video.srcObject = null;
+      }
+
+      const hasVideo = !!participant.stream?.getVideoTracks().some((track) => track.readyState === 'live');
+      entry.tile.classList.toggle('has-video', hasVideo);
+      entry.video.classList.toggle('screen-share-video', !!participant.screenSharing);
+
+      const bg = avatarBgStyle(participant.color, participant.avatarImage);
+      if (entry.avatar.style.cssText !== bg) {
+        entry.avatar.style.cssText = bg;
+        entry.avatar.innerHTML = avatarLabel(participant.initials, participant.avatarImage);
+      }
+
+      entry.muteIcon.style.display = participant.micMuted ? 'inline' : 'none';
+      entry.name.textContent = participant.name || 'Neighborly User';
     }
 
     /* Shows the full Voice Call screen in the main viewport (participant grid + controls) */

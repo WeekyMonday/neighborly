@@ -1329,3 +1329,27 @@ body.theme-light .friend-discovery-card { background: linear-gradient(115deg, #e
 }
 .server-invite-dialog-actions button.primary { color: #fff; background: #5865f2; }
 .server-invite-dialog-actions button:hover { filter: brightness(1.08); }
+/* === Voice channel participant rows ======================================= */
+.voice-empty-hint {
+  padding: 6px 10px;
+  color: #949ba4;
+  font-size: 12px;
+  font-style: italic;
+}
+.voice-member-mute-icon-inline,
+.voice-member-camera-on {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1;
+}
+/* The remote audio elements live on <body>, not inside a tile, so they must
+   never take up space or be picked up by the page layout. */
+.call-tile-audio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
